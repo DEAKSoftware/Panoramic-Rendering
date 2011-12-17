@@ -5,10 +5,13 @@
 
 Dominik Deak
 
+
+1.0 Introduction
+
 This project is the source code for my thesis, "Panoramic Rendering for 
-Concave Surfaces of Revolution". The thesis investigated methods for
-generating panoramic images, based on a 2D profile curve, or a mathematical
-expression.
+Concave Surfaces of Revolution", submitted in 2001. The thesis investigated 
+methods for generating panoramic images, based on a 2D profile curve, or a 
+mathematical expression.
 
 A surface of revolution can be constructed by revolving a 2D curve around a 
 line, the principal axis. The geometric shape of the symmetrical surface is
@@ -19,6 +22,9 @@ curves provide a convenient way for modelling a display's shape.
 The software implementation includes a ray-tracer and a real-time rendering 
 system.
 
+The name "Cosmic Ray" is derived from an earlier private project of mine.
+"Tau" is a branch targeting specifically my thesis.
+
 
 2.0 Source Code
 
@@ -27,7 +33,7 @@ but it did the job. The project is organised into the following structure:
 
    object/              - 3D models needed to load the test scenes
    source/              - C++ source code for the project
-   thesis/              - Collection of trial programs and scrips used for the thesis
+   thesis/              - Collection of trial programs and scripts used for the thesis
    __scene00.scr        - Test scene
    __test0.scr          - The cube scene
    __test1.scr          - The rubber duck scene

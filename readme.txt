@@ -55,7 +55,7 @@ http://www.csse.monash.edu.au/hons/projects/2001/Deak.pdf
 http://dominikdeak.com.au/index.php?page=panoramic-rendering
 
 
-3.3 Video Demonstration the Algorithm
+3.3 Video Demonstration of the Algorithm
 
 http://www.youtube.com/watch?v=MCSk8av_H7Q
 http://www.youtube.com/watch?v=RVNAbg3a7mA
@@ -65,7 +65,7 @@ http://www.youtube.com/watch?v=hjgnWKOimcQ
 
 4.0 License
 
-Copyright 2003, Dominik De k
+Copyright 2003, Dominik Deak
 
 This program is free software; you can redistribute it and/or modify it under the 
 terms of the GNU General Public License as published by the Free Software 

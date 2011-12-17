@@ -1,0 +1,7 @@
+VTune/
+a.cmd
+debug.txt
+*.dep
+*.ncb
+*.opt
+*.plg

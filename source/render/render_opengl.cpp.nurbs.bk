@@ -1,0 +1,602 @@
+/*============================================================================*/
+/* Cosmic Ray [Tau] - Dominik Deak                                            */
+/*                                                                            */
+/*                          OpenGL Rendering Functions                        */
+/*============================================================================*/
+
+
+/*---------------------------------------------------------------------------
+   Don't include this file if it's already defined.   
+  ---------------------------------------------------------------------------*/
+#ifndef __RENDER_OPENGL_CPP__
+#define __RENDER_OPENGL_CPP__
+
+
+/*---------------------------------------------------------------------------
+   Include libraries and other source files needed in this file.
+  ---------------------------------------------------------------------------*/
+#include "../_common/std_inc.h"
+#include "../_common/std_3d.h"
+#include "../_common/list.cpp"
+#include "../render/render.cpp"
+#include "../render/shade.cpp"
+#include "../render/transform.cpp"
+#include "../video_io/video.cpp"
+#include "../mem_data/vertex.cpp"
+#include "../mem_data/polygon.cpp"
+#include "../mem_data/nurb.cpp"
+#include "../mem_data/entity.cpp"
+#include "../mem_data/world.cpp"
+
+
+/*---------------------------------------------------------------------------
+  Definitions.
+  ---------------------------------------------------------------------------*/
+#define RENOGL_SUBDIV_TRHESH     0.13333f             //Subdivision threshold
+
+
+/*---------------------------------------------------------------------------
+  The OpenGL rendering class.
+  ---------------------------------------------------------------------------*/
+class RenderOpenGLClass : public RenderClass, private ShadeClass, private TransformClass
+   {
+   /*==== Private Declarations ===============================================*/
+   private:
+
+   GLUnurbsObj* GLU_NurbsObject;                      //Handle to the nurbs object
+   NurbRec*     Nurb;                                 //Local Nurb data
+   float        ModelViewMatrix[16];
+   float        ProjMatrix[16];
+   int          ViewPortMatrix[4];
+
+
+   /*-------------------------------------------------------------------------
+      Render the vertex normal of a Polygon.
+     ------------------------------------------------------------------------*/
+   inline bool RenderVertexNormal(PolygonRec* Polygon)
+      {
+      if (Polygon == NULL) {return false;}
+      if (ProfCode != NULL) {return true;}
+
+
+      glBegin(GL_LINES); 
+      
+      for (int I = 0; I < POLY_PT_COUNT; I++)
+         {
+         glColor3f(0.0f, 0.5f, 0.0f);
+         glVertex3fv((GLfloat*)&Polygon->Vertex[I]->tCoord);   
+         
+         glColor3f(1.0f, 1.0f, 1.0f);
+         glVertex3fv((GLfloat*)&(Polygon->Vertex[I]->tCoord +
+                                 Polygon->Vertex[I]->Normal.X * 0.25f));
+         }
+      
+      glEnd(); 
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      Render a Gouraud shaded wire frame Polygon.
+     ------------------------------------------------------------------------*/
+   inline bool RenderWire(PolygonRec* Polygon)
+      {
+      if (Polygon == NULL) {return false;}
+
+      glBegin(GL_LINE_LOOP); 
+
+      for (int I = 0; I < POLY_PT_COUNT; I++)
+         {
+         glColor3fv((GLfloat*)&Polygon->Shade[I]);
+         glVertex3fv((GLfloat*)&Polygon->Vertex[I]->tCoord);   
+         }
+
+      glEnd(); 
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      Render a Gouraud shaded Polygon.
+     ------------------------------------------------------------------------*/
+   inline bool RenderGouraud(PolygonRec* Polygon)
+      {
+      if (Polygon == NULL) {return false;}
+
+      glBegin(GL_TRIANGLES); 
+      
+      for (int I = 0; I < POLY_PT_COUNT; I++)
+         {
+         glColor3fv((GLfloat*)&Polygon->Shade[I]);
+         glVertex3fv((GLfloat*)&Polygon->Vertex[I]->tCoord);   
+         }
+
+      glEnd(); 
+      
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      Render a Gouraud shaded Nurb, with texture (if present).
+     ------------------------------------------------------------------------*/
+   inline bool RenderGouraud(NurbRec* Nurb, PolygonRec* Polygon)
+      {
+      if ((Nurb == NULL) || (Polygon == NULL)) {return false;}
+         
+      gluBeginSurface(GLU_NurbsObject);
+
+      //Specifiy the colors if the shadow map is disabled        
+      if (((Polygon->Flags & POLYGON_SHADOWMAP) == POLYGON_NULL) &&
+          ((Nurb->Flags    & NURB_COLOR)        != NURB_NULL))
+         {
+         gluNurbsSurface(GLU_NurbsObject, 
+                         Nurb->S_KnotRes, Nurb->S_Knots, 
+                         Nurb->T_KnotRes, Nurb->T_Knots, 
+                         Nurb->FloatsPerEntry,
+                         Nurb->FloatsPerLine, 
+                         (GLfloat*)Nurb->Colors, 
+                         Nurb->S_Order, Nurb->T_Order, 
+                         GL_MAP2_COLOR_4);
+         }
+
+      //Specifiy the texture coordinates
+      if (((Polygon->Flags & POLYGON_TEXTURE) != POLYGON_NULL) &&
+          ((Nurb->Flags    & NURB_TEXTURE)    != NURB_NULL))
+         {
+         gluNurbsSurface(GLU_NurbsObject, 
+                         Nurb->S_KnotRes, Nurb->S_Knots, 
+                         Nurb->T_KnotRes, Nurb->T_Knots, 
+                         Nurb->FloatsPerEntry,
+                         Nurb->FloatsPerLine, 
+                         (GLfloat*)Nurb->TexPoints, 
+                         Nurb->S_Order, Nurb->T_Order, 
+                         GL_MAP2_TEXTURE_COORD_2);
+         }
+
+      //Specifiy the Nurb coordinates
+      if ((Nurb->Flags & NURB_POINT) != NURB_NULL)
+         {
+         gluNurbsSurface(GLU_NurbsObject, 
+                         Nurb->S_KnotRes, Nurb->S_Knots, 
+                         Nurb->T_KnotRes, Nurb->T_Knots, 
+                         Nurb->FloatsPerEntry,
+                         Nurb->FloatsPerLine, 
+                         (GLfloat*)Nurb->Points, 
+                         Nurb->S_Order, Nurb->T_Order, 
+                         GL_MAP2_VERTEX_3);
+         }
+
+      gluEndSurface(GLU_NurbsObject);
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      Render the Nurb's control mesh.
+     ------------------------------------------------------------------------*/
+   inline bool RenderControlMesh(NurbRec* Nurb)
+      {
+      if (Nurb == NULL) {return false;}
+
+      glBegin(GL_LINES);
+      
+      glColor3f(0.0f, 1.0f, 0.0f);
+
+      for (dword T = 0; T < Nurb->T_Res_m1; T++)
+         {
+         for (dword S = 0; S < Nurb->S_Res_m1; S++)
+            {
+            dword Offs = Nurb->LinOffs(S, T);
+
+            //Horizontal lines
+            glVertex3fv((GLfloat*)&Nurb->Points[Offs]);
+            glVertex3fv((GLfloat*)&Nurb->Points[Offs + 1]);
+
+            //Vertical lines
+            glVertex3fv((GLfloat*)&Nurb->Points[Offs]);
+            glVertex3fv((GLfloat*)&Nurb->Points[Offs + Nurb->S_Res]);
+
+            //Bottom horizontal lines
+            if (T == Nurb->T_Res-2)
+               {
+               glVertex3fv((GLfloat*)&Nurb->Points[Offs + Nurb->S_Res]);
+               glVertex3fv((GLfloat*)&Nurb->Points[Offs + Nurb->S_Res + 1]);
+               }
+
+            //Right vertical lines
+            if (S == Nurb->S_Res-2)
+               {
+               glVertex3fv((GLfloat*)&Nurb->Points[Offs + 1]);
+               glVertex3fv((GLfloat*)&Nurb->Points[Offs + Nurb->S_Res + 1]);
+               }
+            }
+         }
+
+      glEnd();
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      This function transforms a Polygon then converts it to a nurb (if 
+      necessary), and renders the result. Returns true on success.
+     ------------------------------------------------------------------------*/
+   bool RenderPolygon(PolygonRec* Polygon, WorldRec* World)
+      {
+      if (Polygon == NULL) {return false;}
+      
+      //---- Do some point transformations if the profile curve is defined ----
+      if (ProfCode != NULL)
+         {
+         dword    CullCount = 0;
+         PointRec tPoint[POLY_PT_COUNT];
+
+         //Transform each polygon vertex, and determine if it's visible.
+         int I;
+         for (I = 0; I < POLY_PT_COUNT; I++)
+            {
+            Polygon->Vertex[I]->tCoord.t = 0.0f;
+
+            //Translate/rotate first by using the model view matrix
+            #define Point Polygon->Vertex[I]->Coord
+            #define MV ModelViewMatrix
+            Polygon->Vertex[I]->tCoord.X = Point.X*MV[0] + Point.Y*MV[4] + Point.Z*MV[8]  + MV[12];
+            Polygon->Vertex[I]->tCoord.Y = Point.X*MV[1] + Point.Y*MV[5] + Point.Z*MV[9]  + MV[13];
+            Polygon->Vertex[I]->tCoord.Z = Point.X*MV[2] + Point.Y*MV[6] + Point.Z*MV[10] + MV[14];
+            #undef MV
+            #undef Point
+
+            //Transform the point, and increment counter if the point is invisible
+            if (PCompFlag)
+               {
+               //Transform with projector compensation
+               if (!ProfCurve_Transform(tPoint[I], Polygon->Vertex[I]->tCoord, POffset)) {CullCount++;}
+               }
+            else
+               {
+               //Transform with NO projector compensation
+               if (!ProfCurve_Transform(tPoint[I], Polygon->Vertex[I]->tCoord)) {CullCount++;}
+               }
+
+            //Exit if all the points are invisible
+            if (CullCount >= POLY_PT_COUNT) {return true;}
+            }
+              
+         //Test is any of the transformed polygon edges exceed the theshold length. 
+         // Set the DoNurbJob flag if an edge exceeds the theshold length.
+         bool DoNurbJob = false;
+         for (I = 0; I < POLY_PT_COUNT; I++)
+            {
+            int I_Next   = (I < POLY_PT_COUNT-1) ? I+1 : 0;
+            float MagSqr = sqr(tPoint[I_Next].X - tPoint[I].X) +  sqr(tPoint[I_Next].Y - tPoint[I].Y);
+            if (MagSqr > RENOGL_SUBDIV_TRHESH) {DoNurbJob = true; break;}
+            }
+
+         //---- Render polygon as a nurb if required ----
+         if (DoNurbJob)
+            {
+            if (Nurb == NULL) {return false;}
+
+//for (I = 0; I < POLY_PT_COUNT; I++) {Polygon->Shade[I] = 1;}
+            //The Nurb's corner color points are intialized with the Polygon's
+            // color data, and the intermediate color points are obtained
+            // by interplolation.
+            Nurb->Interpolate(Polygon->Shade[0], Polygon->Shade[1], 
+                              Polygon->Shade[2], Polygon->Shade[2]);
+
+            //The Nurb's corner control points are intialized with the Polygon's
+            // translated/rotated vertex data, and the intermediate control points 
+            // are obtained by interplolation.
+            Nurb->Interpolate(Polygon->Vertex[0]->tCoord, Polygon->Vertex[1]->tCoord, 
+                              Polygon->Vertex[2]->tCoord, Polygon->Vertex[2]->tCoord);
+
+            //-- Transform the contol points according to the profile curve.
+            //   NOTE: The Polygon's points were already trasformed in the
+            //   previous loop. Instead of re-computing the transformations,
+            //   it is cheaper to copy the tPoints to the four corners of the
+            //   Nurb. --
+            PointRec* DataPtr = Nurb->Points;
+            for (dword T = 0; T < (int)Nurb->T_Res; T++)
+               {
+               for (dword S = 0; S < (int)Nurb->S_Res; S++)
+                  {
+                  //The bottom entries in the patch are all the same (pinched together to form a triangle).
+                  if (T == Nurb->T_Res_m1) {*DataPtr = tPoint[2];}
+                  //Top left corner
+                  else if ((T == 0) && (S == 0)) {*DataPtr = tPoint[0];}
+                  //Top right corner
+                  else if ((T == 0) && (S == Nurb->S_Res_m1)) {*DataPtr = tPoint[1];}
+                  //If got here, we're dealing with intermediate points, do transformation
+                  else 
+                     {
+                     if (PCompFlag) {ProfCurve_Transform(*DataPtr, *DataPtr, POffset);}
+                     else {ProfCurve_Transform(*DataPtr, *DataPtr);}
+                     }
+
+                  //Pre-compensate for the OpenGL's internal perpsective trasformation.
+                  *DataPtr = Compensate(*DataPtr);
+                  DataPtr++;
+                  }
+               }
+
+            //Do a Nurb job with this polygon
+            bool Status = true;
+            //Status = RenderGouraud(Nurb, Polygon);
+            Status = RenderControlMesh(Nurb);
+            return Status;
+            }
+
+         //-- If got here, the triangle's area is below the threshold. In this 
+         //   case, simply use standard poly renderer. But first copy over the 
+         //   previously transformed points, and then pre-compensate for the 
+         //   OpenGL's internal perpsective trasformation. --
+         for (I = 0; I < POLY_PT_COUNT; I++)  {Polygon->Vertex[I]->tCoord = Compensate(tPoint[I]);}
+         }
+
+      //---- No profile curve transforms ----
+      else
+         {
+         //Translate/rotate points
+         for (int I = 0; I < POLY_PT_COUNT; I++) {Polygon->Vertex[I]->tCoord = Polygon->Vertex[I]->Coord;}
+         }
+
+      
+      bool Status = true;
+      //Status &= RenderVertexNormal(Polygon);
+      //Status &= RenderWire(Polygon);
+      Status &= RenderGouraud(Polygon);
+      return Status;
+      }
+
+   /*-------------------------------------------------------------------------
+      Recursively computes the shading colors and then renders an Entity list.
+
+      EntityList  : The list of Entities and sub-Entities to render. This 
+                    pointer can be NULL (empty list).
+      LightList   : List of Ligths. This pointer can be NULL (empty list).
+      World       : Access to the world data such as view origin and 
+                    orientation, etc.
+     ------------------------------------------------------------------------*/
+   bool RenderShadeEntity(ListRec* EntityList, ListRec* LightList, WorldRec* World) 
+      {
+      //---- Render each Entity ----
+      ListRec* EntityNode = EntityList;
+      while (EntityNode != NULL)
+         {
+         #define Entity ((EntityRec*)EntityNode->Data)
+         if (Entity == NULL) {return false;}
+
+         //Determine the if shading is required
+         bool ShadeFlag = ((Entity->Flags & ENTITY_SHADE) != ENTITY_NULL);
+         if (ShadeFlag)
+            {
+            //Process every vertex
+            ListRec* VertexNode = Entity->VertexList;
+            while (VertexNode != NULL)
+               {
+               //Find the diffuse light color for this vertex
+               if (!ShadeGouraud((VertexRec*)VertexNode->Data, LightList)) {return false;}
+               VertexNode = VertexNode->Next;
+               }
+            }
+
+         //Render each Polygon in the Entity
+         ListRec* PolygonNode = Entity->PolygonList;
+         while (PolygonNode != NULL)
+            {
+            //Find the rendering color for this Polygon
+            if (ShadeFlag) 
+               {
+               if (!ShadeGouraud((PolygonRec*)PolygonNode->Data, LightList)) {return false;}
+               }
+            /*//Shade flag debug
+            else
+               {
+               ((PolygonRec*)PolygonNode->Data)->Shade[0] = 
+               ((PolygonRec*)PolygonNode->Data)->Shade[1] = 
+               ((PolygonRec*)PolygonNode->Data)->Shade[2] = 1.0f;
+               }/**/
+
+            //Render the Polygon
+            if (!RenderPolygon((PolygonRec*)PolygonNode->Data, World)) {return false;}
+            PolygonNode = PolygonNode->Next;
+            }
+
+         //Recursively render the sub-Entities
+         if (!RenderShadeEntity(Entity->EntityList, LightList, World)) {return false;}
+
+
+         //Advance to the next Entity node
+         EntityNode = EntityNode->Next;
+         #undef Entity
+         }
+      
+      return true;
+      }
+
+
+   /*==== Public Declarations ================================================*/
+   public:
+   
+   /*---- Constructor --------------------------------------------------------*/
+   RenderOpenGLClass(void) 
+      {
+      GLU_NurbsObject = NULL;
+      Nurb            = NULL;
+      }
+
+   /*---- Destructor ---------------------------------------------------------*/
+   ~RenderOpenGLClass(void) 
+      {
+      if (GLU_NurbsObject != NULL) {gluDeleteNurbsRenderer(GLU_NurbsObject); GLU_NurbsObject = NULL;}
+      if (Nurb != NULL) {delete Nurb; Nurb = NULL;}
+      }
+
+   /*-------------------------------------------------------------------------
+      Setup the renderer.
+     ------------------------------------------------------------------------*/
+   bool Initialize(VideoClass* Video, char* ProfCurve, float ProfEquLim) 
+      {
+      //No NULL pointers please
+      if (Video == NULL) {return false;}
+
+      //Ensure that the Video uses the correct interface,
+      // and the Video mode is valid.
+      if ((Video->CurrentDevice != VIDEO_OPENGL) || !Video->ModeValid) {return false;}
+
+
+      //Compile the profile curve equation
+      if (ProfCurve != NULL)
+         {
+         str_append(ProfEqu, ProfCurve);
+         ProfCode = EquSolver.Compile(ProfEqu);
+         if (ProfCode == NULL) {printf("RenderOpenGLClass::Initialize( ): EquSolver.Compile( ) failed.\n\tPossible syntax error in profile curve equation.\n"); return false;}
+         if (!EquSolver.Debug(ProfCode)) {return false;}
+         ProfEquLimR = ProfEquLim;
+
+         //Setup the nurbs device
+         if (GLU_NurbsObject != NULL) {gluDeleteNurbsRenderer(GLU_NurbsObject);}
+         GLU_NurbsObject = gluNewNurbsRenderer();
+         if (GLU_NurbsObject == NULL) {printf("RenderOpenGLClass::Initialize( ): gluNewNurbsRenderer( ) failed.\n"); return false;}
+
+         /*
+         gluNurbsProperty(GLU_NurbsObject, (GLenum)GLU_SAMPLING_METHOD, GLU_PATH_LENGTH);
+         gluNurbsProperty(GLU_NurbsObject, (GLenum)GLU_SAMPLING_TOLERANCE, 150.0f);
+         /**/
+         /*
+         gluNurbsProperty(GLU_NurbsObject, (GLenum)GLU_SAMPLING_METHOD, GLU_DOMAIN_DISTANCE);
+         gluNurbsProperty(GLU_NurbsObject, (GLenum)GLU_U_STEP, 5.0f);
+         gluNurbsProperty(GLU_NurbsObject, (GLenum)GLU_V_STEP, 5.0f);
+         /**/
+
+         gluNurbsProperty(GLU_NurbsObject, (GLenum)GLU_SAMPLING_METHOD, GLU_PARAMETRIC_ERROR);
+         gluNurbsProperty(GLU_NurbsObject, (GLenum)GLU_PARAMETRIC_TOLERANCE, 20.0f);
+         /**/
+         gluNurbsProperty(GLU_NurbsObject, (GLenum)GLU_DISPLAY_MODE, GLU_OUTLINE_POLYGON);
+         //gluNurbsProperty(GLU_NurbsObject, (GLenum)GLU_DISPLAY_MODE, GLU_OUTLINE_PATCH);
+         //gluNurbsProperty(GLU_NurbsObject, (GLenum)GLU_DISPLAY_MODE, GLU_FILL);
+         gluNurbsProperty(GLU_NurbsObject, (GLenum)GLU_CULLING, GL_TRUE);
+
+         //Allocate a Nurb
+         if (Nurb != NULL) {delete Nurb;}
+         Nurb = new NurbRec(3, 3, NURB_COLOR | NURB_POINT | NURB_TEXTURE);
+         if (Nurb == NULL) {printf("RenderOpenGLClass::Initialize( ): Nurb allocation failed.\n"); return false;}
+         if ((Nurb->Flags & NURB_VALID) == NURB_NULL) {printf("RenderOpenGLClass::Initialize( ): Nurb data is invalid.\n"); return false;}
+
+         //Setup the transformation table
+         if (!InitTable(Video, ProfCode, ProfEquLim))
+            {printf("RenderOpenGLClass::Initialize( ): TransformClass::InitTable( ) failed.\n"); return false;}
+         }
+
+      //Setup other data members
+      CamApeture.X = Video->XY_Ratio / CamApeture.X;
+      CamApeture.Y = 1.0f / CamApeture.Y;
+
+      RenderValid = true;           //Indicate that rendering is allowed
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      Shutdown the renderer.
+     ------------------------------------------------------------------------*/
+   bool ShutDown(void) 
+      {
+      if (ProfEqu  != NULL) {delete[] ProfEqu;  ProfEqu  = NULL;}
+      if (ProfCode != NULL) {delete[] ProfCode; ProfCode = NULL;}
+
+      if (GLU_NurbsObject != NULL) {gluDeleteNurbsRenderer(GLU_NurbsObject); GLU_NurbsObject = NULL;}
+      if (Nurb != NULL) {delete Nurb; Nurb = NULL;}
+
+      //Indicate that rendering is not allowed
+      RenderValid = false;
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      This function will render the entire world.
+
+      EntityList  : The list of Entities and sub-Entities to render.
+      LightList   : The list of Lights to use for shading.
+      World       : Access to the world data such as view origin and 
+                    orientation, etc.
+     ------------------------------------------------------------------------*/
+   bool DrawScene(ListRec* EntityList, ListRec* LightList, WorldRec* World) 
+      {
+      //Ensure that the Video uses the correct interface,
+      // and the Video mode is valid.
+      if ((Video->CurrentDevice != VIDEO_OPENGL) || !Video->ModeValid || !RenderValid) {return false;}
+      
+      //If the display area is minimized, don't do any rendering
+      if (Video->Minimized) {return true;}
+
+      //Lock the renderer
+      if (!Video->Lock()) {return false;}
+
+      //Enable the depth buffer (if required)
+      bool ToggleDepthTest = (glIsEnabled(GL_DEPTH_TEST) == GL_FALSE);
+      if (ToggleDepthTest) {glEnable(GL_DEPTH_TEST);}
+
+      //-- Use OpenGL to do the transformation for perspective views --
+      if (ProfCode == NULL)
+         {
+         glMatrixMode(GL_MODELVIEW);
+         glPushMatrix();                                   
+         glRotatef(rad2deg(World->VOrientation.X), -1.0f,  0.0f,  0.0f);
+         glRotatef(rad2deg(World->VOrientation.Y),  0.0f, -1.0f,  0.0f);
+         glRotatef(rad2deg(World->VOrientation.Z),  0.0f,  0.0f, -1.0f);
+         glTranslatef(-World->VOrigin.X, -World->VOrigin.Y, -World->VOrigin.Z);
+         glScalef(CamApeture.X, CamApeture.Y, CamApeture.Z);
+         }
+
+      //-- In panoramic mode, use OpenGL to compute the transformation matrices --
+      else
+         {
+         glMatrixMode(GL_MODELVIEW);
+         glPushMatrix();
+         glRotatef(rad2deg(World->VOrientation.X), 1.0f,  0.0f,  0.0f);
+         glRotatef(rad2deg(World->VOrientation.Y), 0.0f,  1.0f,  0.0f);
+         glRotatef(rad2deg(World->VOrientation.Z), 0.0f,  0.0f, -1.0f);
+         glTranslatef(-World->VOrigin.X, -World->VOrigin.Y, World->VOrigin.Z);
+         glScalef(CamApeture.X, CamApeture.Y, -CamApeture.Z);
+         
+         //Store the matices
+         glGetFloatv(GL_MODELVIEW_MATRIX,(GLfloat*)&ModelViewMatrix);
+         glGetFloatv(GL_PROJECTION_MATRIX, (GLfloat*)&ProjMatrix);
+         glGetIntegerv(GL_VIEWPORT, (GLint*)&ViewPortMatrix);
+         glMatrixMode(GL_MODELVIEW); 
+         glPopMatrix();
+
+         //Preload the matrix data for the NURB renderer
+         gluLoadSamplingMatrices(GLU_NurbsObject, (GLfloat*)ModelViewMatrix, (GLfloat*)ProjMatrix, (GLint*)ViewPortMatrix);
+         }
+
+      //-- Shade and render the Entity list --
+      if (!RenderShadeEntity(EntityList, LightList, World)) {return false;}
+
+      //Pop the transformation matrix (if required)
+      if (ProfCode == NULL) {glMatrixMode(GL_MODELVIEW); glPopMatrix();}
+
+      //Disable the depth buffer (if required)
+      if (ToggleDepthTest) {glDisable(GL_DEPTH_TEST);}
+
+      //Unlock the renderer
+      if (!Video->UnLock()) {return false;}
+
+      return true;
+      }
+
+
+   /*==== End of Class =======================================================*/
+   };
+
+
+/*----------------------------------------------------------------------------
+  Global declaration of the Video class.
+  ----------------------------------------------------------------------------*/
+RenderOpenGLClass RenderOpenGL;
+
+
+/*==== End of file ===========================================================*/
+#endif

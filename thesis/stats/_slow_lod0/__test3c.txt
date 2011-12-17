@@ -1,0 +1,8 @@
+---- Benchmark for "stats\sc_lod0\__test3c.scr" ----
+
+Transfomation             : Direct. 
+Profile Curve             : -(x*x*x) + x*x + x + 1; 
+Total Frames              : 28 
+Average FPS               : 2.420 
+Average Polygons per Frame: 6934.000 
+Average Vertices per Frame: 20802.000 

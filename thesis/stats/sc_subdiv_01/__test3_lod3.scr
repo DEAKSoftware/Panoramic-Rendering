@@ -1,0 +1,225 @@
+//----------------------------------------------------------------------------
+//                           Test 3: The Toy Scene
+//----------------------------------------------------------------------------
+
+//-- Video setup --
+VIDEO
+        FullScreen      1                       //If set true, then the display is in full screen
+        Res             1024 768
+        BitsPerPixel    32
+        Refresh         60                      //Refresh rate in Hz
+
+//-- Renderer setup --
+RENDER
+        //ProfEquLimX 10000 ProfEqu NULL                    //Profile curve: None, default perspective
+        //ProfEquLimX 1.666 ProfEqu "-x + 1;"               //Line
+        ProfEquLimX 1.666 ProfEqu "-(x*x*x) + x*x + x + 1;"
+        //ProfEquLimX 1.666 ProfEqu "-sqrt(4.0 * (1 + 1.5*x^2)) + 3;" //Hyperbola
+        
+        //-- View, camera and display settings --
+        CamApeture      1.3333333333 1 1        //X, Y Camera apeture size, and Z = field of view
+
+        //-- Flags --
+        ClearFlag       1                       //If set true, the frame buffer is cleared with BackgndColor after refresh
+        ShadowFlag      0                       //If set true, shadows are generated (ray tracer only)
+        RefractFlag     1                       //If set true, refractions are rendered (ray tracer only)
+        ReflectFlag     1                       //If set true, reflections are rendered (ray tracer only)
+        HotspotFlag     0                       //Render in hotspot mode (ray tracer only)
+        AntiAliasFlag   0                       //Do anti-aliasing
+        PCompFlag       0                       //If set true, then projetor viewpoint compesation is enabled
+
+        //-- Other attributes --
+        BackgndColor    0.2 0.5 0.7             //Background color
+        POffset         -0.4                    //Projector z-offset in world coords (must be always negative < 0)
+        AA_Treshold     0.03                    //The luminance threshold for anti-aliasing (ray tracer only)
+        AA_Samples      32                      //Number of samples for anti-aliasing (ray tracer only)
+        AA_Jitter       0.0075                  //Jitter amplitude for anti-aliasing (ray tracer only)
+        MaxRayDepth     4                       //Maximum ray-tracing recursions
+        AdaptDepthTresh 0.05                    //The threshold for adatptive depth control (ray tracer only)
+        SubdivTresh     0.1                     //Subdivision threshold (OpenGL only)
+        Max_LOD         3                       //Maximum polygon sub-div recursions - USE IT WISELY! (OpenGL only)
+        CurrentDevice   4                       //Specifies the current redering mode:
+                                                // NULL = 0, DDRAW = 1, D3D = 2, GLIDE = 3, OPENGL = 4, RAY = 5
+
+//-- Setup world attributes --
+WORLD										   
+        VOrigin         -8 2.5 -8               //Initial view origin in the world
+        VVelocity       0 0 0                   //Initial view velocity
+        VRotation       0 0 0                   //Initial view rotation
+        VOrientation    0 45 0.00000000000001   //Initial View orientation
+
+
+
+//---- Building --------------------------------------------------------------
+
+//-- Right Wall --
+ENTITY
+        Class           PLANE
+        GridRes         1 1
+        Color           0.65  0.65  0.65
+        Coord           -8 5 0
+        Orientation     0 0 -90 
+        ScaleConst      10.0 1.0 16.0
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+//-- Back Wall --
+ENTITY
+        Class           PLANE
+        GridRes         1 1
+        Color           0.65  0.65  0.65
+        Coord           0 5 8
+        Orientation     -90 0 90 
+        ScaleConst      10.0 1.0 16.0
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+//-- Right Wall --
+ENTITY
+        Class           PLANE
+        GridRes         1 1
+        Color           0.65  0.65  0.65
+        Coord           8 5 0
+        Orientation     0 0 90 
+        ScaleConst      10.0 1.0 16.0
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+
+//-- Ceiling --
+ENTITY
+        Class           PLANE
+        GridRes         1 1
+        Color           0.65  0.65  0.65
+        Coord           0 10 0
+        Orientation     180 0 0 
+        ScaleConst      16.0 1.0 16.0
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+//-- Floor Far Left --        
+ENTITY
+        Class           "objects/checker_board.cob"
+        Coord           -4 0 4
+        Orientation     90 0 180
+        ScaleConst      2.0 2.0 1.0
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+
+//-- Floor Far Right --
+ENTITY
+        Class           "objects/checker_board.cob"
+        Coord           4 0 4
+        Orientation     90 0 180
+        ScaleConst      2.0 2.0 1.0
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+//-- Floor Near Left --        
+ENTITY
+        Class           "objects/checker_board.cob"
+        Coord           -4 0 -4
+        Orientation     90 0 180
+        ScaleConst      2.0 2.0 1.0
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+//-- Floor Near Right --
+ENTITY
+        Class           "objects/checker_board.cob"
+        Coord           4 0 -4
+        Orientation     90 0 180
+        ScaleConst      2.0 2.0 1.0
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+
+
+//---- Stuff -----------------------------------------------------------------
+
+//-- Table --        
+ENTITY
+        Class           "objects/table.cob"
+        Coord           4 1.0 0
+        Orientation     90 0 180
+        ScaleConst      1.0 1.0 1.0
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+//-- Tricycle --
+ENTITY
+        Class           "objects/tricycle.cob"
+        Coord           -2 0.125 0
+        Orientation     90 -25 180
+        ScaleConst      0.75 0.75 0.75
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+//-- Shapes --
+ENTITY
+        Class           "objects/shapes2.cob"
+        Coord           4 1.75 0
+        Orientation     90 -20 180
+        ScaleConst      0.35 0.35 0.35
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+//-- Fire Extinguisher --
+ENTITY
+        Class           "objects/extinguisher.cob"
+        Coord           4.5 3.6 -7
+        Orientation     90 30 180
+        ScaleConst      0.35 0.35 0.35
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+//-- Ball and a box --
+ENTITY
+        Class           "objects/toy.cob"
+        Coord           0 0.55 -7
+        Orientation     90 20 180
+        ScaleConst      1 1 1
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+//-- Fan --
+ENTITY
+        Class           "objects/fan_base.cob"
+        Coord           -2 0.55 6
+        Orientation     90 0 180
+        ScaleConst      1 1 1
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+ENTITY
+        Class           "objects/fan_propeller.cob"
+        Coord           -2 2.5 6.25
+        Orientation     90 180 180
+        ScaleConst      1 1 1
+        Velocity        0 0 0
+        Rotation        0 0 -7.5
+
+//-- Duck --
+ENTITY
+        Class           "objects/duck.cob"
+        Coord           3 0.6 1
+        Orientation     90 30 180
+        ScaleConst      0.5 0.5 0.5
+        Velocity        0 0 0
+        Rotation        0 0 0
+
+
+
+
+//-- Light setup --
+LIGHT   AmbColor 0.1 0.2 0.4                    //Setup ambient light color. Coord and Color keywords are ignored.
+
+LIGHT   Coord  -5   5  -5                       //Red-ish
+        Color 0.6 0.4 0.2
+
+LIGHT   Coord   5   5  -5                       //Blue-ish
+        Color 0.4 0.5 0.7
+
+LIGHT   Coord   0   5   5                       //Green-ish
+        Color 0.3 0.5 0.3

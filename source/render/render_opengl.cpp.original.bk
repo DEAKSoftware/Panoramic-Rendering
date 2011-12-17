@@ -1,0 +1,530 @@
+/*============================================================================*/
+/* Cosmic Ray [Tau] - Dominik Deak                                            */
+/*                                                                            */
+/*                          OpenGL Rendering Functions                        */
+/*============================================================================*/
+
+
+/*---------------------------------------------------------------------------
+   Don't include this file if it's already defined.   
+  ---------------------------------------------------------------------------*/
+#ifndef __RENDER_OPENGL_CPP__
+#define __RENDER_OPENGL_CPP__
+
+
+/*---------------------------------------------------------------------------
+   Include libraries and other source files needed in this file.
+  ---------------------------------------------------------------------------*/
+#include "../_common/std_inc.h"
+#include "../_common/list.cpp"
+#include "../render/render.cpp"
+#include "../render/shade.cpp"
+#include "../video_io/video.cpp"
+#include "../mem_data/vertex.cpp"
+#include "../mem_data/polygon.cpp"
+#include "../mem_data/entity.cpp"
+
+
+/*---------------------------------------------------------------------------
+  The OpenGL rendering class.
+  ---------------------------------------------------------------------------*/
+class RenderOpenGLClass : public RenderClass, private ShadeClass
+   {
+   /*==== Private Declarations ===============================================*/
+   private:
+
+   dword LOD_Target;
+
+
+   /*-------------------------------------------------------------------------
+      Render a Gouraud shaded Polygon.
+     ------------------------------------------------------------------------*/
+   bool inline RenderVertexNormal(PolygonRec* Polygon)
+      {
+      if (Polygon == NULL) {return false;}
+
+      glEnable(GL_DEPTH_TEST);
+      glBegin(GL_LINES); 
+      
+      for (int I = 0; I < POLY_PT_COUNT; I++)
+         {
+         glColor3f(0.0f, 0.5f, 0.0f);
+         glVertex3f(Polygon->Vertex[I]->Coord.X, 
+                    Polygon->Vertex[I]->Coord.Y, 
+                    Polygon->Vertex[I]->Coord.Z);
+         
+         glColor3f(1.0f, 1.0f, 1.0f);
+         glVertex3f(Polygon->Vertex[I]->Coord.X + Polygon->Vertex[I]->Normal.X * 0.25f, 
+                    Polygon->Vertex[I]->Coord.Y + Polygon->Vertex[I]->Normal.Y * 0.25f, 
+                    Polygon->Vertex[I]->Coord.Z + Polygon->Vertex[I]->Normal.Z * 0.25f);
+         }
+      
+      glEnd(); 
+      glDisable(GL_DEPTH_TEST);
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      Render a Gouraud shaded wire frame Polygon.
+     ------------------------------------------------------------------------*/
+   bool inline RenderWire(PolygonRec* Polygon)
+      {
+      if (Polygon == NULL) {return false;}
+
+      if (glIsEnabled(GL_CULL_FACE) == GL_TRUE)
+         {
+         PointRec V = (Polygon->Vertex[0]->Coord - VOrigin).Unit();
+         if (Polygon->Normal.Dot(V) >= 0.0f) {return true;}
+         }
+
+      glEnable(GL_DEPTH_TEST);
+      glBegin(GL_LINE_LOOP); 
+      
+      for (int I = 0; I < POLY_PT_COUNT; I++)
+         {
+         glColor3f(Polygon->Shade[I].R, 
+                   Polygon->Shade[I].G, 
+                   Polygon->Shade[I].B);
+
+         glVertex3f(Polygon->Vertex[I]->Coord.X, 
+                    Polygon->Vertex[I]->Coord.Y, 
+                    Polygon->Vertex[I]->Coord.Z);
+
+         
+         if (Polygon->Facet[I])
+            {
+            glNormal3f(Polygon->Normal.X, 
+                       Polygon->Normal.Y, 
+                       Polygon->Normal.Z);
+            }
+         else
+            {
+            glNormal3f(Polygon->Vertex[I]->Normal.X, 
+                       Polygon->Vertex[I]->Normal.Y, 
+                       Polygon->Vertex[I]->Normal.Z);
+            }
+         }
+
+      glEnd(); 
+      glDisable(GL_DEPTH_TEST);
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      Render a Gouraud shaded Polygon.
+     ------------------------------------------------------------------------*/
+   bool inline RenderGouraud(PolygonRec* Polygon)
+      {
+      if (Polygon == NULL) {return false;}
+
+      glEnable(GL_DEPTH_TEST);
+      glBegin(GL_TRIANGLES); 
+      
+      for (int I = 0; I < POLY_PT_COUNT; I++)
+         {
+         glColor3f(Polygon->Shade[I].R, 
+                   Polygon->Shade[I].G, 
+                   Polygon->Shade[I].B);
+
+         glVertex3f(Polygon->Vertex[I]->Coord.X, 
+                    Polygon->Vertex[I]->Coord.Y, 
+                    Polygon->Vertex[I]->Coord.Z);
+
+
+         if (Polygon->Facet[I])
+            {
+            glNormal3f(Polygon->Normal.X, 
+                       Polygon->Normal.Y, 
+                       Polygon->Normal.Z);
+            }
+         else
+            {
+            glNormal3f(Polygon->Vertex[I]->Normal.X, 
+                       Polygon->Vertex[I]->Normal.Y, 
+                       Polygon->Vertex[I]->Normal.Z);
+            }
+         }
+      
+      glEnd(); 
+      glDisable(GL_DEPTH_TEST);
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      Finds the root of the profile curve, according to the gradient of the
+      view vector. The view vector can be defined in the profile curve space;
+      
+         z = m*r.
+      
+      m is the gradient of the 3D view vector V in the profile curve space; 
+      
+         m = V.Z / sqrt(sqr(V.X), sqr(V.Y)).
+      
+      Note that the gradient is treated as an absolute value. The profile 
+      curve is given by z = f(r).
+      
+      By finding the root of the profile curve, we can determine the r 
+      intersection of the view vector. This is true when
+      
+            b*r = f(r)
+         => 0   = f(r) - b*r,
+
+      for 0 <= r.
+
+      The root is solved with the iterative bisection method. The root can be 
+      used as a transformation constant for a given 3D point, which 
+      essentially maps the 3D point onto the surface.
+     ------------------------------------------------------------------------*/
+   float inline ProfCurve_FindRoot(float m)
+      {
+      dword Iteration = 0;                            //Loop counter
+      float r1 = 0;                                   //r1 and r2 are the extreme profile curve range
+      float r2 = Video->XY_Ratio;
+      float r;                                        //Estimated r intersection point (mid point of r1 and r2)
+      m = fabs(m);                                    //Absolue value for the profile curve
+
+      //-- Find the root r, (accurate to 2 decimal places). If someting strange 
+      //   happens, the loop stops after 100 iterations. --
+      while ((fabs(r1 - r2) * 0.5f > 0.001f) && (Iteration < 100))
+         {
+         r = (r1 + r2) * 0.5f;                        //Find the mid point
+
+         float z;
+         EquSolver.Execute(z, ProfCode, r);
+         z -= m*r;                                    //Find it's z value
+
+         if (z > 0.0f) {r1 = r;} else {r2 = r;}       //Narrow the range accoding to the sign of z
+
+         Iteration++;
+         }
+
+      return r;
+      }
+
+   /*-------------------------------------------------------------------------
+      The Polygon sub-division algorithm. It splits the polygon's longest edge.
+
+      MidVertex : Midpoint vertex.
+      PolygonA  : Sub polygon A.
+      PolygonB  : Sub polygon B.
+      Polygon   : Polygon to divide.
+     ------------------------------------------------------------------------*/
+   inline void SubDivPolygon(VertexRec* MidVertex, PolygonRec* PolygonA, PolygonRec* PolygonB, PolygonRec* Polygon)
+      {
+      //Find the longest edge of the Polygon
+      int Pt0 = 0, Pt1 = 1, Pt2;
+      float Mag0 = (Polygon->Vertex[0]->Coord - Polygon->Vertex[1]->Coord).Mag();
+      float Mag1 = (Polygon->Vertex[1]->Coord - Polygon->Vertex[2]->Coord).Mag();
+      float Mag2 = (Polygon->Vertex[2]->Coord - Polygon->Vertex[0]->Coord).Mag();
+
+      if (Mag0 < Mag1) {Mag0 = Mag1; Pt0 = 1; Pt1 = 2;}
+      if (Mag0 < Mag2) {Mag0 = Mag2; Pt0 = 2; Pt1 = 0;}
+      Pt2 = 3 - Pt0 - Pt1;
+
+      //Find the mid point of the longest edge
+      MidVertex->Coord        = (Polygon->Vertex[Pt0]->Coord  + Polygon->Vertex[Pt1]->Coord) * 0.5f;
+      MidVertex->Normal       = (Polygon->Vertex[Pt0]->Normal + Polygon->Vertex[Pt1]->Normal) * 0.5f;
+      MidVertex->Shade        = (Polygon->Vertex[Pt0]->Shade  + Polygon->Vertex[Pt1]->Shade) * 0.5f;
+      MidVertex->PolyRefCount = 0;
+
+      //The two new Polygons inherit the base Polygon's properties
+      PolygonA->kAmb   = PolygonB->kAmb   = Polygon->kAmb;
+      PolygonA->kDiff  = PolygonB->kDiff  = Polygon->kDiff;
+      PolygonA->kSpec  = PolygonB->kSpec  = Polygon->kSpec;
+      PolygonA->Normal = PolygonB->Normal = Polygon->Normal;
+
+      //Setup vertices for the new Polygons
+      PolygonA->Vertex[0] = Polygon->Vertex[Pt0];
+      PolygonA->Vertex[1] = MidVertex;
+      PolygonA->Vertex[2] = Polygon->Vertex[Pt2];
+      PolygonB->Vertex[0] = MidVertex;
+      PolygonB->Vertex[1] = Polygon->Vertex[Pt1];
+      PolygonB->Vertex[2] = Polygon->Vertex[Pt2];
+         
+      //Setup shading colors for the new Polygons
+      PolygonA->Shade[0] =  Polygon->Shade[Pt0];
+      PolygonA->Shade[1] = (Polygon->Shade[Pt0] + Polygon->Shade[Pt1]) * 0.5f;
+      PolygonA->Shade[2] =  Polygon->Shade[Pt2];
+      PolygonB->Shade[0] =  PolygonA->Shade[1];
+      PolygonB->Shade[1] =  Polygon->Shade[Pt1];
+      PolygonB->Shade[2] =  Polygon->Shade[Pt2];
+      }
+
+
+   /*-------------------------------------------------------------------------
+      This function recursively subdivides a Polygon, and renders the 
+      subdivisions when the maximum recursion is reached. Returns true on
+      success.
+     ------------------------------------------------------------------------*/
+   bool RenderSubDiv(PolygonRec* Polygon, dword LOD)
+      {
+      if (Polygon == NULL) {return false;}
+
+      
+      //Local stuff
+      int I;
+      
+
+      //Find polygon area, then adjust the LOD_Target
+      if (ProfCode != NULL)
+         {
+
+
+         LOD_Target = 4;
+         if (LOD_Target > Max_LOD) {LOD_Target = Max_LOD;}
+         }
+      else {LOD_Target = 0;}
+
+
+      //======== If it reached the maximum recursion or the display is a 
+      //         standard perspective view, render the Polygon ========
+      if ((LOD >= LOD_Target) || (ProfCode == NULL))
+         {
+         //Temp vertex list and old pointers.
+         VertexRec* OldVertexPtr[POLY_PT_COUNT];
+         VertexRec  TempVertex[POLY_PT_COUNT];        //Data to manipulate
+                  
+         //Transform each polygon vertex
+         for (I = 0; I < POLY_PT_COUNT; I++)
+            {
+            TempVertex[I]      = *Polygon->Vertex[I]; //Copy all the original vertex attributes to the TempVertex
+            OldVertexPtr[I]    = Polygon->Vertex[I];  //Save the old vertex pointer
+            Polygon->Vertex[I] = &TempVertex[I];      //Re-link the polygon to the TempVertex data
+
+            //Translate then rotate the TempVertex according to the view position and orientation
+            TempVertex[I].Coord = (TempVertex[I].Coord - VOrigin).Rotate(VRotation);
+
+
+            //---- If a profile curve code exists, map the polygon coordinates 
+            //     to the curved display ----
+            if (ProfCode != NULL)
+               {
+               //-- Find the view vector --
+               #define V (Polygon->Vertex[I]->Coord)
+               //PointRec V = Polygon->Vertex[I]->Coord;
+               
+               //Use the X and Y coordinates to find the radius, 
+               // which is used for the profile curve evaluation.
+               float r = sqrt(sqr(V.X) + sqr(V.Y));
+
+               float rInt = 0.0f;
+               if (r != 0.0f) {rInt = ProfCurve_FindRoot(V.Z / r);}
+
+
+               //The depth value Z becomes the magnitude of the V vector. This 
+               // is used by OpenGL for Z-buffering.
+               float Z = V.Mag();
+
+               //The X and Y components of the view unit vector D will be
+               // scaled by rInt. D is further scaled by Z*0.5f to compensate
+               // for the perspective view.
+               rInt = rInt * Z * 0.5f;   
+
+               //Scale the [X, Y] componets of V to unit values.
+               PointRec D = PointRec(V.X, V.Y, 0, 0).Unit();
+               #undef V 
+
+               //The curved display coordinates is obtained by scaling the 
+               // unit coordinates in D by the adjusted rInt value. The depth 
+               // value Z is also added.
+               Polygon->Vertex[I]->Coord = PointRec(0, 0, Z, 0) + D * rInt;
+               }
+            }
+         
+         //RenderVertexNormal(Polygon);
+         bool RenderStatus = RenderWire(Polygon);
+         //bool RenderStatus = RenderGouraud(Polygon);
+         
+         //Restore the vertex links for the polygon
+         for (I = 0; I < POLY_PT_COUNT; I++) 
+            {Polygon->Vertex[I] = OldVertexPtr[I];}
+
+
+         //If render failed, return with error
+         if (!RenderStatus) {return false;}
+         }
+
+      //======== Else, continue subdividing the polygon ========
+      else
+         {
+         //Sub divide the Polygon
+         VertexRec  MidVertex;
+         PolygonRec PolygonA, PolygonB;
+         SubDivPolygon(&MidVertex, &PolygonA, &PolygonB, Polygon);
+
+         //Do a recursive call to split the new Polygons further if necessary
+         if (!RenderSubDiv(&PolygonA, LOD+1)) {return false;}
+         if (!RenderSubDiv(&PolygonB, LOD+1)) {return false;}
+         }
+      
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      Computes the shading colors for the entire Entity. Returns true on 
+      success.
+     ------------------------------------------------------------------------*/
+   bool Shade(ListRec* EntityList, ListRec* LightList)
+      {
+      //-- Shade each Entity --
+      ListRec* EntityNode = EntityList;
+      while (EntityNode != NULL)
+         {
+         #define Entity ((EntityRec*)EntityNode->Data)
+         if (Entity == NULL) {return false;}
+
+
+         //-- Process every vertex --
+         ListRec* VertexNode = Entity->VertexList;
+         while (VertexNode != NULL)
+            {
+            //-- Find the diffuse light color for this vertex --
+            if (!ShadeGouraud((VertexRec*)VertexNode->Data, LightList)) {return false;}
+            VertexNode = VertexNode->Next;
+            }
+
+
+         //-- Process every Polygon --
+         ListRec* PolygonNode = Entity->PolygonList;
+         while (PolygonNode != NULL)
+            {
+            //-- Find the rendering color for this Polygon -- 
+            if (!ShadeGouraud((PolygonRec*)PolygonNode->Data, LightList)) {return false;}
+            PolygonNode = PolygonNode->Next;
+            }
+
+
+         //-- Recursively shade the sub-Entities --
+         if (!Shade(Entity->EntityList, LightList)) {return false;}
+
+         //Advance to the next Entity node
+         EntityNode = EntityNode->Next;
+         #undef Entity
+         }
+
+      return true;
+      }
+
+
+   /*==== Public Declarations ================================================*/
+   public:
+   
+   /*---- Constructor --------------------------------------------------------*/
+   RenderOpenGLClass(void) {}
+
+   /*---- Destructor ---------------------------------------------------------*/
+   ~RenderOpenGLClass(void) {}
+
+   /*-------------------------------------------------------------------------
+      Setup the renderer.
+     ------------------------------------------------------------------------*/
+   bool Initialize(VideoClass* Video, char* ProfCurve) 
+      {
+      //No NULL pointers please
+      if (Video == NULL) {return false;}
+
+      //Ensure that the Video uses the correct interface,
+      // and the Video mode is valid.
+      if ((Video->CurrentDevice != VIDEO_OPENGL) || !Video->ModeValid) {return false;}
+
+
+      //Compile the profile curve equation
+      if (ProfCurve != NULL)
+         {
+         str_append(ProfEqu, ProfCurve);
+         ProfCode = EquSolver.Compile(ProfEqu);
+         if (ProfCode == NULL) {return false;}
+         if (!EquSolver.Debug(ProfCode)) {return false;}
+         }
+
+      //Indicate that rendering is allowed
+      RenderValid = true;
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      Shutdown the renderer.
+     ------------------------------------------------------------------------*/
+   bool ShutDown(void) 
+      {
+      if (ProfEqu  != NULL) {delete[] ProfEqu;  ProfEqu  = NULL;}
+      if (ProfCode != NULL) {delete[] ProfCode; ProfCode = NULL;}
+
+      //Indicate that rendering is not allowed
+      RenderValid = false;
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      This function will render the entire world.
+
+      EntityList  : The list of Entities and sub-Entities to render.
+      LightList   : The list of Lights to use for shading.
+     ------------------------------------------------------------------------*/
+   bool DrawScene(ListRec* EntityList, ListRec* LightList)
+      {
+      //Ensure that the Video uses the correct interface,
+      // and the Video mode is valid.
+      if ((Video->CurrentDevice != VIDEO_OPENGL) || !Video->ModeValid || !RenderValid) {return false;}
+      
+      //If the display area is minimized, don't do any rendering
+      if (Video->Minimized) {return true;}
+
+
+      //---- Shade the scene ----
+      if (!Shade(EntityList, LightList)) {return false;}
+
+
+      //Lock the renderer
+      if (!Video->Lock()) {return false;}
+
+  
+      //---- Render each Entity ----
+      ListRec* EntityNode = EntityList;
+      while (EntityNode != NULL)
+         {
+         #define Entity ((EntityRec*)EntityNode->Data)
+         if (Entity == NULL) {return false;}
+
+         //Render each Polygon in the Entity
+         ListRec* PolygonNode = Entity->PolygonList;
+         while (PolygonNode != NULL)
+            {
+            if (!RenderSubDiv((PolygonRec*)PolygonNode->Data, 0)) {return false;}
+            PolygonNode = PolygonNode->Next;
+            }
+
+         //Recursively render the sub-Entities
+         if (!DrawScene(Entity->EntityList, LightList)) {return false;}
+
+
+         //Advance to the next Entity node
+         EntityNode = EntityNode->Next;
+         #undef Entity
+         }
+
+
+      //Unlock the renderer
+      if (!Video->UnLock()) {return false;}
+
+      return true;
+      }
+
+
+   /*==== End of Class =======================================================*/
+   };
+
+
+/*----------------------------------------------------------------------------
+  Global declaration of the Video class.
+  ----------------------------------------------------------------------------*/
+RenderOpenGLClass RenderOpenGL;
+
+
+/*==== End of file ===========================================================*/
+#endif

@@ -1,0 +1,632 @@
+/*============================================================================*/
+/* Cosmic Ray [Tau] - Dominik Deak                                            */
+/*                                                                            */
+/*                      Ray Tracer Rendering Functions                        */
+/*============================================================================*/
+
+
+/*---------------------------------------------------------------------------
+   Don't include this file if it's already defined.   
+  ---------------------------------------------------------------------------*/
+#ifndef __RENDER_RAY_CPP__
+#define __RENDER_RAY_CPP__
+
+
+/*---------------------------------------------------------------------------
+   Include libraries and other source files needed in this file.
+  ---------------------------------------------------------------------------*/
+#include "../_common/std_inc.h"
+#include "../render/render.cpp"
+#include "../video_io/video.cpp"
+#include "../mem_data/bitmap.cpp"
+#include "../math/mathcnst.h"
+#include "../math/mathpoly.cpp"
+#include "../math/equsolver.cpp"
+#include "../system/systimer.cpp"
+
+#include "../disk_io/tga_fmt.cpp"
+
+/*---------------------------------------------------------------------------
+
+  ---------------------------------------------------------------------------*/
+PointRec Circle[19] = 
+   {
+   //Center
+   PointRec(  0.000f,  0.000f, 0.0f, 0.0f), 
+
+   //Circle 1
+   PointRec(  0.750f,  0.433f, 0.0f, 0.0f), 
+   PointRec(  0.000f,  0.866f, 0.0f, 0.0f), 
+   PointRec( -0.750f,  0.433f, 0.0f, 0.0f), 
+   PointRec( -0.750f, -0.433f, 0.0f, 0.0f), 
+   PointRec(  0.000f, -0.866f, 0.0f, 0.0f), 
+   PointRec(  0.750f,  0.433f, 0.0f, 0.0f), 
+
+   //Circle 2
+   PointRec(  0.750f,  0.000f, 0.0f, 0.0f), 
+   PointRec(  0.375f,  0.650f, 0.0f, 0.0f), 
+   PointRec( -0.375f,  0.650f, 0.0f, 0.0f), 
+   PointRec( -0.750f,  0.000f, 0.0f, 0.0f), 
+   PointRec( -0.375f, -0.650f, 0.0f, 0.0f), 
+   PointRec(  0.375f, -0.650f, 0.0f, 0.0f), 
+   PointRec(  0.375f,  0.216f, 0.0f, 0.0f), 
+   PointRec(  0.000f,  0.433f, 0.0f, 0.0f), 
+   PointRec( -0.375f,  0.217f, 0.0f, 0.0f), 
+   PointRec( -0.375f,  0.216f, 0.0f, 0.0f), 
+   PointRec(  0.000f, -0.433f, 0.0f, 0.0f), 
+   PointRec(  0.375f, -0.217f, 0.0f, 0.0f)
+   };
+
+float JitterOffs = 0.015f;
+
+
+float _R(void)
+   {
+   return (float)rand() / (float)RAND_MAX;
+   }
+
+
+/*---------------------------------------------------------------------------
+  The RenderRay class.
+  ---------------------------------------------------------------------------*/
+class RenderRayClass : public RenderClass, private ShadeClass
+   {
+   /*==== Private Declarations ===============================================*/
+   private:
+
+   /*---- Data ---------------------------------------------------------------*/
+   BitmapRec Frame;                             //Bitmap image
+   ListRec*  Loc_EntityList;                    //The local copy of the world Entity list
+   ListRec*  Loc_LightList;                     //The local copy of the world Light list
+   bool      RenderDone;                        //Flag to indicate that the rendering is done
+   int       gl_ColorFmt;                       //OpenGL specific flags
+
+   /*-------------------------------------------------------------------------
+
+     ------------------------------------------------------------------------*/
+   PointRec JitterRay(PointRec* Ray, int RayNum)
+      {
+      if (RayNum > 18) {RayNum = 18;}
+
+      //Create a randomized offset
+      PointRec Random = PointRec((1 - 2*_R()) * JitterOffs,
+                                 (1 - 2*_R()) * JitterOffs,
+                                 Ray->t, 0.0f);
+
+      //Select a point from the circle and add the random offset.
+      PointRec Jitter = Circle[RayNum] + Random;
+      
+      
+      //Now rotate the jitter vector, so that it aligns with Ray
+      float m = (float)sqrt(sqr(Ray->Y) + sqr(Ray->Z));
+      PointRec NewRay;
+      NewRay.X =  Jitter.X * m + Jitter.Z * Ray->X;
+
+      if (m != 0.0f) {m = 1.0f / m;}
+
+      NewRay.Y = -Jitter.X * Ray->X * Ray->Y * m + 
+                  Jitter.Y * Ray->Z * m + 
+                  Jitter.Z * Ray->Y;
+      NewRay.Z = -Jitter.X * Ray->X * Ray->Z * m - 
+                  Jitter.Y * Ray->Y * m + 
+                  Jitter.Z * Ray->Z;
+
+      return NewRay.Unit();
+      }
+
+   /*-------------------------------------------------------------------------
+      Test if a line intersects an Entity's bounding volume. Returns true
+      if intersection occured.
+
+      BUG: If the unit ray D is parralel to any of the bounding volume planes,
+           the function incorrectly returns no intersection flag, even though
+           the intersection should have occured. This will produce a vertical
+           and a horizontal gap in the center of the final image. A quick hack
+           is to make the ray D slightly non-parallel.
+
+      O      : Origin of the line.
+      D      : Direction of the line (unit vector).
+      Entity : Entity to test.
+     ------------------------------------------------------------------------*/
+   bool inline EntityIntersect(PointRec* O, PointRec* D, EntityRec* Entity)
+      {
+      if (Entity == NULL) {return false;}
+
+      PointRec I1, I2;
+      bool     Flag1; 
+      bool     Flag2;
+      float    t_min = float_MIN; 
+      float    t_max = float_MAX;
+
+      for (int Incr = 0; Incr < 6; Incr += 2)
+         {
+         //Get the intersection with the two opposite faces
+         Flag1 = Plane_InfLine_Intersect(&I1, O, D, &Entity->BV[1]->Coord, &Entity->BV[Incr  ]->Normal, true);
+         Flag2 = Plane_InfLine_Intersect(&I2, O, D, &Entity->BV[7]->Coord, &Entity->BV[Incr+1]->Normal, true);
+
+         //If an intersection occured with any bounding volume face, do 
+         // further testing.
+         if (Flag1 || Flag2)
+            {            
+            if (I1.t > I2.t) {float temp = I1.t; I1.t = I2.t; I2.t = temp;}
+            if (I1.t > t_min) {t_min = I1.t;}
+            if (I2.t < t_max) {t_max = I2.t;}
+            if ((t_max < t_min) || (t_max < 0.0f)) {return false;}
+            }
+         else {return false;}
+         }
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      This function tests the entire scene whether the Ray intersects any object 
+      in the scene. Returns true if intersection has occured.
+      
+      I           : The intersection point is returned here. On entry, the 
+                    parameter I->t is used find the closest intersection point. 
+                    I->t must be set to float_MAX when calling IntersectScene() 
+                    for the first time.
+      Origin      : Origin of the ray.
+      Ray         : The direction of the ray, must be a unit vector.
+      Surface     : The pointer of the intersected surface returned here.
+      ExclSurface : The previous intersection surface in the previous recursion
+                    level of TraceRay(). PSurface will be excluded from intersection 
+                    tests, as the origin of the ray lies on that surface. It can
+                    be left to NULL if no surface exclusion is required.
+      EntityList  : The list of Entities and sub-Entities to test.
+     ------------------------------------------------------------------------*/
+   bool IntersectScene(PointRec* I, PointRec* Origin, PointRec* Ray, PolygonRec* &Surface, PolygonRec* ExclSurface, ListRec* EntityList)
+      {
+      bool        IFlag = false;                      //Intersect flag
+      PointRec    NewI;                               //New intersection point
+      
+      //---- Test each Entity ----
+      ListRec* EntityNode = EntityList;
+      while (EntityNode != NULL)
+         {
+         #define Entity ((EntityRec*)EntityNode->Data)
+         if (Entity == NULL) {return false;}
+
+         //---- Do bounding volume test. If the ray intersects this Entity's
+         //     bounding volume, it's polygons and subEntities will 
+         //     be tested. ----
+         if (EntityIntersect(Origin, Ray, Entity))
+            {
+//IFlag = true;/*
+            //-- Test for intersection in each Polygon in the Entity --
+            ListRec* PolygonNode = Entity->PolygonList;
+            while (PolygonNode != NULL)
+               {
+               #define Polygon ((PolygonRec*)PolygonNode->Data)
+               if (Polygon == NULL) {return false;}
+
+               //Exclude PSurface from testing
+               if (Polygon != ExclSurface)
+                  {
+                  if (Poly_InfLine_Intersect(&NewI, Origin, Ray, Polygon, false))
+                     {
+                     //We want the closest intersection point from the origin
+                     if (I->t > NewI.t)
+                        {
+                        *I      = NewI;
+                        Surface = Polygon;
+                        IFlag   = true;
+                        }
+                     }
+                  }
+
+               PolygonNode = PolygonNode->Next;
+               #undef Polygon
+               }                                   //END while PolygonNode...
+
+            //-- Recursively test the sub-Entities, and set the 
+            //   intersection flag accordingly. --
+            if (Entity->EntityList != NULL)
+               {
+               IFlag |= IntersectScene(I, Origin, Ray, Surface, ExclSurface, Entity->EntityList);
+               }
+/**/
+            }                                      //END if BV_Intersect()...
+
+         //Advance to the next Entity node
+         EntityNode = EntityNode->Next;
+         #undef Entity
+         }
+            
+      return IFlag;
+      }
+
+   /*-------------------------------------------------------------------------
+     The ray-tracer function.
+
+     LocalColor  : Shading color that will be returned
+     Origin      : Origin of the incident ray
+     Ray         : Direction of the incident ray, must be a unit vector. On 
+                   return Ray->t will hold the distance of the nearest object.
+     ExclSurface : Pointer to the surface to exclude from intersection testing.
+                   This is useful if the Origin lies on the previously tested
+                   surface. If no surfaces are to be excluded, set it to NULL.
+     Depth       : Current recursion depth
+     Inside      : This flag is set true if Ray was transmitted into PrevSurface
+     -------------------------------------------------------------------------*/
+   void RayTrace(ColorRec* LocalColor, PointRec* Origin, PointRec* Ray, PolygonRec* ExclSurface, dword Depth, bool Inside)
+      {
+      //Do intersection test with every Entity in the world
+      PointRec I;                                     //Intersection point 
+      PolygonRec* Surface;                            //Surface that had the intersection
+      I.t = float_MAX;                                //t must be set to extreme maximum!
+      if (!IntersectScene(&I, Origin, Ray, Surface, ExclSurface, Loc_EntityList))
+         {*LocalColor = BackgndColor; return;}        //Return becomes blackground color if no intersection occured
+      Ray->t = I.t;
+
+//*LocalColor = 1; return;
+
+      //Get local color at intersection, take every light 
+      // source into consideration
+      ShadePhong(LocalColor, &I, &VOrigin, Surface, Loc_EntityList, Loc_LightList, ShadowFlag);
+
+                       
+      //Don't recurse at maximum depth
+      ColorRec ReflectColor, RefractColor;
+      if (Depth >= MaxRayDepth) 
+         {
+         ReflectColor = 0.0f; 
+         RefractColor = BackgndColor;
+         }  
+
+      //======== Recurse for reflected and refracted rays ========
+      else
+         {
+         //-- Ray trace the reflected ray --
+         if ((Surface->Reflect != 0.0f) && ReflectFlag) //Trace only if reflection component is not 0 and the flag is set
+            {
+            PointRec R;
+            Poly_Reflect(&R, Ray, Surface);        //Find the reflection
+            RayTrace(&ReflectColor, &I, &R, Surface, Depth+1, false);
+            }
+
+         //-- Ray trace the refracted ray --
+         if (Surface->Trans != 0.0f)               //Trace only for transparent surfaces
+            {
+            if (RefractFlag)                       //Do refraction if requested
+               {
+               PointRec T;
+               Poly_Refract(&T, Ray, Surface, Inside); //Find the refraction
+               RayTrace(&RefractColor, &I, &T, Surface, Depth+1, true);
+               }
+            else
+               {
+               RayTrace(&RefractColor, &I, Ray, Surface, Depth+1, false);
+               }
+            }
+         }
+
+      //======== Combine final colors ========
+      //-- Combine transperacy when needed --
+      if (Surface->Trans != 0.0f)
+         {
+         *LocalColor = *LocalColor * Surface->Opacity + RefractColor * Surface->Trans;
+         }
+   
+      //-- Combine reflection when needed --
+      if ((Surface->Reflect != 0.0f) && ReflectFlag)
+         {
+         *LocalColor += (ReflectColor * Surface->Reflect);
+         }
+      }
+
+
+   /*==== Public Declarations ================================================*/
+   public:
+   
+   /*---- Public Data --------------------------------------------------------*/
+   
+   /*---- Constructor --------------------------------------------------------*/
+   RenderRayClass(void) 
+      {
+      Frame          = BitmapRec();
+      Loc_EntityList = NULL; 
+      Loc_LightList  = NULL;
+      gl_ColorFmt    = 0;
+      RenderDone     = false;
+
+      
+      FILE* f  =fopen("a.txt", "wt");
+      for (int i = 0; i < 10000; i++)
+        {
+        fprintf(f, "%.6f\n", _R());
+        }
+      fclose(f);
+      }
+
+   /*---- Destructor ---------------------------------------------------------*/
+   ~RenderRayClass(void) 
+      {
+      Frame.DeleteData();
+      }
+
+   /*-------------------------------------------------------------------------
+      Setup the renderer.
+     ------------------------------------------------------------------------*/
+   bool Initialize(VideoClass* Video, char* ProfCurve) 
+      {
+      //No NULL pointers please
+      if (Video == NULL) {return false;}
+
+      //Ensure that the Video uses the correct interface,
+      // and the Video mode is valid.
+      if ((Video->CurrentDevice != VIDEO_OPENGL) || !Video->ModeValid) {return false;}
+
+
+      //-- Allocate a texture for the rendered image --
+      Frame.DeleteData();
+
+      switch(Video->BitsPerPixel)
+         {
+         case 32 : Frame.Flags = BMP_TYPE_RGBA; gl_ColorFmt = GL_RGBA; break;
+         case 24 : Frame.Flags = BMP_TYPE_RGB;  gl_ColorFmt = GL_RGB;  break;
+         case 16 : Frame.Flags = BMP_TYPE_RGB;  gl_ColorFmt = GL_RGB;  break;
+         default : return false;
+         }
+
+      Frame.Flags |= BMP_TEXTURE;
+      Frame.U_Res = Video->X_Res;
+      Frame.V_Res = Video->Y_Res;
+      Frame.FrameCount = 1;
+
+      if (!Frame.AllocateData()) {return false;}
+      if (!Frame.Check()) {return false;}
+
+      
+      //-- Compile the profile curve equation --
+      if (ProfCurve != NULL)
+         {
+         str_replace(ProfEqu, ProfCurve);
+         ProfCode = EquSolver.Compile(ProfEqu);
+         if (ProfCode == NULL) {return false;}
+         if (!EquSolver.Debug(ProfCode)) {return false;}
+         }
+
+      //If there is no profile curve equation, then specify a plane
+      else
+         {
+         str_replace(ProfEqu, "2;");
+         ProfCode = EquSolver.Compile(ProfEqu);
+         if (ProfCode == NULL) {return false;}
+         if (!EquSolver.Debug(ProfCode)) {return false;}
+         }
+
+
+      //-- Setup other varaibles --
+      CamApeture.X /= (float)Frame.U_Cent;
+      CamApeture.Y /= (float)Frame.V_Cent;
+      CamApeture.Z  = 1.0f / CamApeture.Z;
+      RenderDone    = false;
+      RenderValid   = true;                          //Indicate that rendering is allowed
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      Shutdown the renderer.
+     ------------------------------------------------------------------------*/
+   bool ShutDown(void) 
+      {
+      Frame.DeleteData();
+      if (ProfEqu  != NULL) {delete[] ProfEqu;  ProfEqu  = NULL;}
+      if (ProfCode != NULL) {delete[] ProfCode; ProfCode = NULL;}
+
+      //Indicate that rendering is not allowed
+      RenderValid = false;
+      RenderDone  = false;
+
+      return true;
+      }
+
+   /*-------------------------------------------------------------------------
+      This function will render the entire world.
+
+      EntityList  : The list of Entities and sub-Entities to render.
+      LightList   : The list of Lights to use for shading.
+     ------------------------------------------------------------------------*/
+   bool DrawScene(ListRec* EntityList, ListRec* LightList) 
+      {
+      //Ensure that the Video uses the correct interface,
+      // and the Video mode is valid.
+      if ((Video->CurrentDevice != VIDEO_OPENGL) || !Video->ModeValid || !RenderValid) {return false;}
+
+      //If the display area is minimized, don't do any rendering
+      if (Video->Minimized) {return true;}
+
+      //Lock the renderer
+      if (!Video->Lock()) {return false;}
+
+
+      //---- Setup window so that coordinates it correspond to raster coords ----
+      //Setup the 2D projection
+      glMatrixMode(GL_PROJECTION);
+      glPushMatrix();
+      glLoadIdentity();
+      gluOrtho2D((GLdouble)0.0, (GLdouble)Frame.U_Res, (GLdouble)Frame.V_Res, (GLdouble)0.0);
+
+      //Setup the 2D model view matrix along with the OpenGL viewport area
+      glMatrixMode(GL_MODELVIEW);
+      glPushMatrix();
+      glLoadIdentity();
+      glViewport((GLint)0, (GLint)0, (GLsizei)Frame.U_Res, (GLsizei)Frame.V_Res); //Set the viewport size  
+
+
+      //Simply copy the image to the screen if rendering is complete
+      if (RenderDone) 
+         {
+         int U_Start = ((int)Video->X_Res - (int)Frame.U_Res) >> 1;
+         int V_Start = ((int)Video->Y_Res - (int)Frame.V_Res) >> 1;
+         if (U_Start < 0) {U_Start = 0;}
+         if (V_Start < 0) {V_Start = 0;}
+
+         byte* ScanLinePtr = Frame.FramePtr;
+         for (int V = V_Start; V < (V_Start + (int)Frame.V_Res); V++)
+            {
+            glRasterPos2i((GLint)U_Start, (GLint)V);
+            glDrawPixels((GLint)Frame.U_Res, (GLint)1, (GLenum)gl_ColorFmt, GL_UNSIGNED_BYTE, ScanLinePtr);
+            ScanLinePtr += Frame.BytesPerLine;
+            }
+
+         //Restore the matrices
+         glPopMatrix();
+         glMatrixMode(GL_PROJECTION);
+         glPopMatrix();
+
+         return true;
+         }
+
+
+      //Save the Entity and Light list pointers to a local pointer to 
+      // avoid parameter passing in RayTrace().
+      Loc_EntityList = EntityList; 
+      Loc_LightList  = LightList;
+
+
+      //-- Render the entire scene --
+      byte*  PixelPtr = Frame.FramePtr;
+      float  PrevLum_U  = 0;
+      float  PrevLum_V  = 0;
+
+      float* Lum     = new float[Frame.U_Res];
+      float* LastLum = new float[Frame.U_Res];
+
+
+      //Setup the timer functions
+      SystemTimer.TS_DiffStart();
+
+      //Do the loop
+      for (int V = 0; V < (int)Frame.V_Res; V++)
+         {
+         float* LumPtr     = Lum;
+         float* LastLumPtr = LastLum;
+
+         for (int U = 0; U < (int)Frame.U_Res; U++)
+            {
+            //For the current projector view plane coordinate, find the incident ray
+            PointRec Ray;
+            Ray.X = (float)((int)U - (int)Frame.U_Cent) * CamApeture.X;
+            Ray.Y = (float)((int)Frame.V_Cent - (int)V) * CamApeture.Y;
+            Ray.Z = 0.0f;  //Reset Z, becuse we compute Ray.Mag() later
+            Ray.t = 0.0f;
+
+            //Find the Z value according to the profile curve
+            if (!EquSolver.Execute(Ray.Z, ProfCode, Ray.Mag())) {return false;}
+            Ray.Z *= CamApeture.Z;
+
+            //Convert to a unit vector, then rotate the ray vector according 
+            // to the viewer's orientation.
+            Ray = Ray.Rotate(VRotation).Unit();
+
+
+
+         
+            //Do the ray tracing
+            ColorRec  Color;
+            iColorRec iColor;
+            RayTrace(&Color, &VOrigin, &Ray, NULL, 1, false);
+        
+            
+
+            //Find the luminance of the color
+            *LumPtr = 0.299f*Color.R + 0.587f*Color.G + 0.114f*Color.B;
+            if (V > 0) {PrevLum_V = *LastLumPtr;}
+            else {PrevLum_V = *LumPtr;}
+
+            if (U > 0) {PrevLum_U = *(LumPtr-1);}
+            else {PrevLum_U = *LumPtr;}
+
+
+            //if ((fabs(PrevLum_U - *LumPtr) > 0.03f) || (fabs(PrevLum_V - *LumPtr) > 0.03f)) 
+               {
+               //Color = 1.0f;
+               
+               for (int I = 0; I < 19; I++)
+                  {
+                  ColorRec NewColor;
+                  RayTrace(&NewColor, &VOrigin, &JitterRay(&Ray, I), NULL, 1, false);
+                  Color += NewColor;
+                  }
+               
+               Color /= (float)(I+1);
+               /**/
+               }
+
+
+
+         
+            //Convert float colors to integers (range 0 - 255)
+            iColor = iColorRec((int)(Color.R * 255.0f), 
+                               (int)(Color.G * 255.0f), 
+                               (int)(Color.B * 255.0f), 0);
+         
+            //Saturate colors if necessay
+            iColor = iColor.Saturate();
+
+
+            //Get the time delay in seconds and 
+            // render hot spots only if requred
+            if (HotspotFlag)
+               {
+               float expTime = 1.0f - exp(-10000.0f*SystemTimer.ReadTS_DiffSec());
+               iColor = 255.0f * expTime;
+               iColor = iColor.Saturate();
+               }
+            
+            
+            //Save RGBA colors
+            Frame.Pixel->Write(PixelPtr, &iColor);
+            
+            
+            //Advance to the next pixel
+            LumPtr++;
+            LastLumPtr++;
+            PixelPtr += Frame.BytesPerPixel;
+            }
+
+
+         //Update screen
+         glRasterPos2i(0, V);
+         glDrawPixels(Frame.U_Res, 1, (GLenum)gl_ColorFmt, GL_UNSIGNED_BYTE, (PixelPtr - Frame.BytesPerLine));
+         Video->Refresh(false, 0.0f, 0.0f, 0.0f, 0.0f);
+
+
+         float* Temp = Lum;
+         Lum         = LastLum;
+         LastLum     = Temp;
+         }
+
+TGA.Save("a.tga", &Frame, true);
+      //Restore the matrices
+      glPopMatrix();
+      glMatrixMode(GL_PROJECTION);
+      glPopMatrix();
+
+      RenderDone = true;
+
+      //Unlock the renderer
+      if (!Video->UnLock()) {return false;}
+
+      return true;
+      }
+
+
+
+   /*==== End of Class =======================================================*/
+   };
+
+
+
+/*----------------------------------------------------------------------------
+  Global declaration of the Video class.
+  ----------------------------------------------------------------------------*/
+RenderRayClass RenderRay;
+
+
+/*==== End of file ===========================================================*/
+#endif

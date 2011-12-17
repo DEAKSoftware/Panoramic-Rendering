@@ -1,0 +1,8 @@
+---- Benchmark for "stats\sc_lod0\__test1b.scr" ----
+
+Transfomation             : Lookup Table. 
+Profile Curve             : -x + 1; 
+Total Frames              : 713 
+Average FPS               : 60.870 
+Average Polygons per Frame: 2020.000 
+Average Vertices per Frame: 6060.000 

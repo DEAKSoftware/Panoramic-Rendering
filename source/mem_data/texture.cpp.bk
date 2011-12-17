@@ -1,0 +1,446 @@
+/*============================================================================*/
+/* Cosmic Ray [Tau] - Dominik Deak                                            */
+/*                                                                            */
+/*                         Texture Data Functions                             */
+/*============================================================================*/
+
+/*---------------------------------------------------------------------------
+   Don't include this file if it's already defined.   
+  ---------------------------------------------------------------------------*/
+#ifndef __TEXTURE_CPP__
+#define __TEXTURE_CPP__
+
+
+/*---------------------------------------------------------------------------
+   Include libraries and other source files needed in this file.
+  ---------------------------------------------------------------------------*/
+#include "../_common/std_inc.h"
+#include "../_common/std_3d.h"
+
+
+/*----------------------------------------------------------------------------
+   Definitions for the bitmaps flags.
+  ----------------------------------------------------------------------------*/
+#define BMP_TYPE_MASK         0x000000FF                 //Used to mask out the bitmap type
+#define BMP_TYPE_NULL         0x00000000                 //Undefined bitmap type.
+#define BMP_TYPE_A            0x00000001                 //08-bits/pix, greyscale, or just plain Alpha channel.
+#define BMP_TYPE_C            0x00000002                 //08-bits/pix, 256 color, using a color table
+#define BMP_TYPE_CA           0x00000003                 //16-bits/pix, 256 color, using a color table plus Alpha channel, order C, A.
+#define BMP_TYPE_HI           0x00000004                 //16-bits/pix, 64k color bitmap, bit order RRRRRGGGGGGBBBBB.
+#define BMP_TYPE_HIA          0x00000005                 //24-bits/pix, 64k color bitmap, plus Alpha channel, bit order RRRRRGGGGGGBBBBB AAAAAAAA.
+#define BMP_TYPE_RGB          0x00000006                 //24-bits/pix, 16.7 million color bitmap, order R, G, B.
+#define BMP_TYPE_RGBA         0x00000007                 //32-bits/pix, 16.7 million color bitmap, plus Alpha channel, order R, G, B, A.
+#define BMP_TYPE_ARGB         0x00000008                 //32-bits/pix, Alpha channel, plus 16.7 million color bitmap, order A, R, G, B.
+
+#define BMP_CLASS_MASK        0x0000FF00                 //Used to mask out the class
+#define BMP_TEXTURE           0x00000100                 //Plain texture
+#define BMP_FX_MAP            0x00000200                 //FX map
+#define BMP_SHADOW_MAP        0x00000400                 //Shadow map
+
+#define BMP_FLAGS_MASK        0x00FF0000                 //Used to mask out the flags
+#define BMP_ANIMABLE          0x00010000                 //Bitmap is animable
+#define BMP_FONT_TABLE        0x00020000                 //Bitmap is used as a font
+#define BMP_COLOR_TABLE       0x00040000                 //Bitmap uses a color table
+#define BMP_PROCTEX           0x00080000                 //This is a procedural texture
+
+#define COLOR_TABLE_HI_SIZE   256*2                      //Color table size using HI color entries
+#define COLOR_TABLE_RGB_SIZE  256*3                      //Color table size using RGB color entries
+#define COLOR_TABLE_MAX_COUNT 256
+
+
+
+/*---------------------------------------------------------------------------
+  The GPBitmap class.
+  ---------------------------------------------------------------------------*/
+class GPBitmapClass
+   {
+   /*==== Public Declarations ================================================*/
+   public:
+
+   /*----------------------------------------------------------------------------
+      A font table record.
+     ----------------------------------------------------------------------------*/
+   struct FontTableRec
+      {
+      dword X_Origin;
+      dword Y_Origin;
+      dword X_Size;
+      dword Y_Size;
+      };
+
+   #define FONT_TABLE_SIZE       256*sizeof(FontTableRec)   //Font table size in bytes
+   #define FONT_TABLE_MAX_COUNT  256                        //Max number of entries in the font table
+
+
+   /*----------------------------------------------------------------------------
+      General purpose bitmap data structure.
+     ----------------------------------------------------------------------------*/
+   struct GPBitmapRec
+      {
+      dword         Flags;                //Bitmap property flags (see type definitions above)
+
+      byte*         BitmapPtr;            //Points to the bitmap data
+      byte*         FramePtr;             //Points to the current frame in the bitmap data
+      dword         FrameCount;           //Number of frames present (including the first one)
+
+      void*         ProcTexFn;            //Procedural texture function pointer
+
+      byte*         ColorTablePtr;        //Points to the color table
+      FontTableRec* FontTablePtr;         //Points to the font table. Its a 256 allocated array.
+      dword         FileNameNumber;       //This will hold the number that indexes the texture filename table
+   
+      dword         Size;                 //Size of the bitmap in bytes (for a single frame only)
+      dword         TotalSize;            //Total size of the bitmap in bytes, icluding all frames
+      dword         BitsPerPixel;         //Number of bits for each pixel
+      dword         BytesPerPixel;        //Pixel size in bytes
+      dword         BytesPerLine;         //Number bytes in each line of the bitmap
+
+      dword         U_Res;                //Horizontal resolution of bitmap
+      dword         V_Res;                //Vertical resolution of bitmap
+      dword         U_Cent;               //Center point U of bitmap
+      dword         V_Cent;               //Center point V of bitmap
+      };
+
+   /*----------------------------------------------------------------------------
+      Resets Bitmap to NULL. WARNING: No data will be deallocated, it simply
+      resets the structure. Returns true on success.
+     ----------------------------------------------------------------------------*/
+   void inline Clear(GPBitmapRec* Bitmap)
+      {
+      if (Bitmap == NULL) {return;}
+
+      Bitmap->Flags           = BMP_TYPE_NULL;
+
+      Bitmap->BitmapPtr       = NULL;
+      Bitmap->FramePtr        = NULL;
+      Bitmap->FrameCount      = 0;
+
+      Bitmap->ProcTexFn       = NULL;
+
+      Bitmap->ColorTablePtr   = NULL;
+      Bitmap->FontTablePtr    = NULL;
+      Bitmap->FileNameNumber  = 0;
+   
+      Bitmap->Size            = 0;
+      Bitmap->TotalSize       = 0;
+      Bitmap->BitsPerPixel    = 0;
+      Bitmap->BytesPerPixel   = 0;
+      Bitmap->BytesPerLine    = 0;
+
+      Bitmap->U_Res           = 0;
+      Bitmap->V_Res           = 0;
+      Bitmap->U_Cent          = 0;
+      Bitmap->V_Cent          = 0;
+      }
+
+   /*----------------------------------------------------------------------------
+      Allocates a new GPBitmapRec.
+     ----------------------------------------------------------------------------*/
+   GPBitmapRec* Allocate(void)
+      {
+      GPBitmapRec* NewBitmap = new GPBitmapRec;
+      if (NewBitmap == NULL) {return NULL;}
+      
+      Clear(NewBitmap);
+      
+      return NewBitmap;
+      }
+
+   /*----------------------------------------------------------------------------
+     Deletes a GPBitmapRec.
+     ----------------------------------------------------------------------------*/
+   void Delete(GPBitmapRec* &OldBitmap)
+      {
+      if (OldBitmap == NULL) {return;}
+
+      DeleteTexture(OldBitmap);
+      delete OldBitmap;
+
+      OldBitmap = NULL;
+      }
+   
+   /*----------------------------------------------------------------------------
+      This function checks the correctness of a general purpose bitmap data 
+      structure. It does not perform a comprehensive check, it only ensures that
+      some of the allocated data structures should be present for certain 
+      configurations. If the structure is correct it returns true.
+     ----------------------------------------------------------------------------*/
+   bool Check(GPBitmapRec* Bitmap)
+      {
+      if (Bitmap == NULL) {return false;}
+
+      dword BitmapType = Bitmap->Flags & BMP_TYPE_MASK;
+
+      //-- Do some checking on various bitmap types --
+      switch (BitmapType)
+         {
+         //Undefined bitmap type.
+         case BMP_TYPE_NULL : {
+                              if (Bitmap->BitsPerPixel != 0) 
+                                 {printf("CheckGPBitmapData( ) : Invalid Bitmap->BitsPerPixel.\n"); return false;}
+                           
+                              //Dimensions must be 0
+                              if ((Bitmap->U_Res != 0) || (Bitmap->V_Res != 0))
+                                 {printf("CheckGPBitmapData( ) : U and/or V resolution is not 0.\n"); return false;}
+
+                              //Bitmap size must be 0
+                              if ((Bitmap->Size != 0) || (Bitmap->TotalSize != 0))
+                                 {printf("CheckGPBitmapData( ) : Bitmap size and/or total size is not 0.\n"); return false;}
+
+                              //Must not contain bitmap data
+                              if ((Bitmap->BitmapPtr != NULL) || (Bitmap->FramePtr != NULL))
+                                 {printf("CheckGPBitmapData( ) : Bitmap and frame pointers should be NULL.\n"); return false;}
+
+                              //Font table should be also absent
+                              if (((Bitmap->Flags & BMP_FONT_TABLE) != 0) || (Bitmap->FontTablePtr != NULL))
+                                 {printf("CheckGPBitmapData( ) : Font table should be absent.\n"); return false;}
+
+                              //Color table can be present
+                              if ((Bitmap->Flags & BMP_COLOR_TABLE) != 0)
+                                 {
+                                 if (Bitmap->ColorTablePtr == NULL)
+                                    {printf("CheckGPBitmapData( ) : Missing color table.\n"); return false;}
+                                 }
+
+                              //Procedural texture function pointer must be absent
+                              if (((Bitmap->Flags & BMP_PROCTEX) != 0) || (Bitmap->ProcTexFn == NULL))
+                                 {printf("CheckGPBitmapData( ) : Procedural texture function pointer should be absent.\n"); return false;}
+                           
+                              return true;
+                              }
+      
+         //08-bits/pix, greyscale, or just plain Alpha channel.
+         case BMP_TYPE_A    : {
+                              if (Bitmap->BitsPerPixel != 8)
+                                 {printf("CheckGPBitmapData( ) : Invalid Bitmap->BitsPerPixel.\n"); return false;}
+                              break;
+                              }
+
+         //08-bits/pix, 256 color, using a color table
+         case BMP_TYPE_C    : {
+                              if (Bitmap->BitsPerPixel != 8)
+                                 {printf("CheckGPBitmapData( ) : Invalid Bitmap->BitsPerPixel.\n"); return false;}
+                              break;
+                              }
+
+         //16-bits/pix, 256 color, using a color table plus Alpha channel, order C, A.
+         case BMP_TYPE_CA   : {
+                              if (Bitmap->BitsPerPixel != 16)
+                                 {printf("CheckGPBitmapData( ) : Invalid Bitmap->BitsPerPixel.\n"); return false;}
+                              break;
+                              }
+
+         //16-bits/pix, 64k color bitmap, bit order RRRRRGGGGGGBBBBB.
+         case BMP_TYPE_HI   : {
+                              if (Bitmap->BitsPerPixel != 16)
+                                 {printf("CheckGPBitmapData( ) : Invalid Bitmap->BitsPerPixel.\n"); return false;}
+                              break;
+                              }
+
+         //24-bits/pix, 64k color bitmap, plus Alpha channel, bit order RRRRRGGGGGGBBBBB AAAAAAAA.
+         case BMP_TYPE_HIA  : {
+                              if (Bitmap->BitsPerPixel != 24)
+                                 {printf("CheckGPBitmapData( ) : Invalid Bitmap->BitsPerPixel.\n"); return false;}
+                              break;
+                              }
+
+         //24-bits/pix, 16.7 million color bitmap, order R, G, B.
+         case BMP_TYPE_RGB  : {
+                              if (Bitmap->BitsPerPixel != 24)
+                                 {printf("CheckGPBitmapData( ) : Invalid Bitmap->BitsPerPixel.\n"); return false;}
+                              break;
+                              }
+
+         //32-bits/pix, 16.7 million color bitmap, plus Alpha channel, order R, G, B, A.
+         case BMP_TYPE_RGBA : {
+                              if (Bitmap->BitsPerPixel != 32)
+                                 {printf("CheckGPBitmapData( ) : Invalid Bitmap->BitsPerPixel.\n"); return false;}
+                              break;
+                              }
+
+         //32-bits/pix, Alpha channel, plus 16.7 million color bitmap, order A, R, G, B.
+         case BMP_TYPE_ARGB : {
+                              if (Bitmap->BitsPerPixel != 32)
+                                 {printf("CheckGPBitmapData( ) : Invalid Bitmap->BitsPerPixel.\n"); return false;}
+                              break;
+                              }
+         //Unknown type
+         default            : printf("CheckGPBitmapData( ) : Image type is invalid or unknown.\n"); return false;
+         }
+
+
+      //Do some dimension checking
+      if ((Bitmap->U_Res == 0) || (Bitmap->V_Res == 0))
+         {printf("CheckGPBitmapData( ) : U and/or V resolution is 0.\n"); return false;}
+
+      //Do some size checking
+      if ((Bitmap->Size == 0) || (Bitmap->TotalSize == 0) || (Bitmap->Size > Bitmap->TotalSize))
+         {printf("CheckGPBitmapData( ) : Bitmap size and/or total size is incorrect or 0.\n"); return false;}
+
+      //There must be at least one frame present
+      if (Bitmap->FrameCount == 0)
+         {printf("CheckGPBitmapData( ) : Frame count is 0.\n"); return false;}
+   
+      //For more than one frames, the BMP_ANIMABLE flag must be set
+      if ((Bitmap->FrameCount > 1) && ((Bitmap->Flags & BMP_ANIMABLE) != 0))
+         {printf("CheckGPBitmapData( ) : Missing BMP_ANIMABLE flag.\n"); return false;}
+
+      //If got here, it should contain bitmap data   
+      if ((Bitmap->BitmapPtr == NULL) || (Bitmap->FramePtr == NULL))
+         {printf("CheckGPBitmapData( ) : Bitmap and/or frame pointer is NULL.\n"); return false;}
+
+      //Check for color table
+      if ((Bitmap->Flags & BMP_COLOR_TABLE) != 0)
+         {
+         if ((BitmapType != BMP_TYPE_C) && (BitmapType != BMP_TYPE_CA))
+            {printf("CheckGPBitmapData( ) : .\n"); return false;}
+
+         if (Bitmap->ColorTablePtr == NULL)
+            {printf("CheckGPBitmapData( ) : Missing color table.\n"); return false;}
+         }
+
+      //Check for font table
+      if ((Bitmap->Flags & BMP_FONT_TABLE) != 0)
+         {
+         if (BitmapType != BMP_TYPE_RGBA)
+            {printf("CheckGPBitmapData( ) : Font bitmap is not BMP_TYPE_RGBA.\n"); return false;}
+
+         if (Bitmap->FontTablePtr == NULL)
+            {printf("CheckGPBitmapData( ) : Missing font table.\n"); return false;}
+         }
+
+      //Check for procedural texture function pointer
+      if (((Bitmap->Flags & BMP_PROCTEX) != 0) && (Bitmap->ProcTexFn == NULL))
+         {printf("CheckGPBitmapData( ) : Procedural texture function pointer is missing.\n"); return false;}
+
+      return true;
+      }
+
+   /*----------------------------------------------------------------------------
+      This function allocates a new texture in a general purpose bitmap data 
+      structure. On success the function returns true and all the data members 
+      in NewBitmap are initialised or allocated. On fail, the function returns 
+      false, and the entire NewBitmap data tructure is reset to zero.
+
+      NewBitmap : The data structure that will be initialized. On entry the 
+                  following data members must be defined:
+                     Flags        : Bitmap type and flags. If the font table flag 
+                                    is set, a font table will be created. If the 
+                                    color table flag is set, and the image type 
+                                    specifes a non-color table image, this flag 
+                                    will be ignored and cleared.
+                     U_Res, V_Res : U/V resolution.
+                     FrameCount   : Number of frames.
+
+                  The rest of the data members are either allocated or reset.
+     ----------------------------------------------------------------------------*/
+   bool AllocateTexture(GPBitmapRec* NewBitmap)
+      {
+      //-- Determine the bits per pixel and setup the color table flag --
+      switch (NewBitmap->Flags & BMP_TYPE_MASK)
+         {
+         case BMP_TYPE_NULL : NewBitmap->BitsPerPixel = 0;  break;
+         case BMP_TYPE_A    : NewBitmap->BitsPerPixel = 8;  NewBitmap->Flags &= ~BMP_COLOR_TABLE; break;
+         case BMP_TYPE_C    : NewBitmap->BitsPerPixel = 8;  NewBitmap->Flags |= BMP_COLOR_TABLE;  break;
+         case BMP_TYPE_CA   : NewBitmap->BitsPerPixel = 16; NewBitmap->Flags |= BMP_COLOR_TABLE;  break;
+         case BMP_TYPE_HI   : NewBitmap->BitsPerPixel = 16; NewBitmap->Flags &= ~BMP_COLOR_TABLE; break;
+         case BMP_TYPE_HIA  : NewBitmap->BitsPerPixel = 24; NewBitmap->Flags &= ~BMP_COLOR_TABLE; break;
+         case BMP_TYPE_RGB  : NewBitmap->BitsPerPixel = 24; NewBitmap->Flags &= ~BMP_COLOR_TABLE; break;
+         case BMP_TYPE_RGBA : NewBitmap->BitsPerPixel = 32; NewBitmap->Flags &= ~BMP_COLOR_TABLE; break;
+         case BMP_TYPE_ARGB : NewBitmap->BitsPerPixel = 32; NewBitmap->Flags &= ~BMP_COLOR_TABLE; break;
+         default            : printf("CreateGPBitmapData( ) : Specified image type is invalid or unknown.\n"); goto _CreateGPBitmapData_Error;
+         }
+
+      //-- Initialise the data members --
+      NewBitmap->BytesPerPixel  = NewBitmap->BitsPerPixel >> 3;
+      NewBitmap->BytesPerLine   = NewBitmap->BytesPerPixel * NewBitmap->U_Res;
+      NewBitmap->Size           = NewBitmap->BytesPerLine  * NewBitmap->V_Res;
+      NewBitmap->TotalSize      = NewBitmap->Size          * NewBitmap->FrameCount;
+      NewBitmap->U_Cent         = NewBitmap->U_Res >> 1;
+      NewBitmap->V_Cent         = NewBitmap->V_Res >> 1;
+      NewBitmap->BitmapPtr      = NULL;
+      NewBitmap->FramePtr       = NULL; 
+      NewBitmap->ColorTablePtr  = NULL;
+      NewBitmap->FontTablePtr   = NULL;
+      NewBitmap->FileNameNumber = 0;
+      NewBitmap->ProcTexFn      = NULL;
+   
+      //-- See if total size is not 0 --
+      if ((NewBitmap->TotalSize == 0) && ((NewBitmap->Flags & BMP_TYPE_MASK) != BMP_TYPE_NULL))
+         {
+         printf("CreateGPBitmapData( ): NewBitmap->TotalSize == 0.\n"); 
+         goto _CreateGPBitmapData_Error;
+         }
+   
+      //-- Allocate the new bitmap if needed --
+      if ((NewBitmap->Flags & BMP_TYPE_MASK) != BMP_TYPE_NULL)
+         {
+         NewBitmap->FramePtr = NewBitmap->BitmapPtr = new byte[NewBitmap->TotalSize];
+         if (NewBitmap->BitmapPtr == NULL)
+            {
+            printf("CreateGPBitmapData( ): Bitmap allocation error.\n");
+            goto _CreateGPBitmapData_Error;
+            }
+         }
+
+      //-- Allocate color table if needed --
+      if (NewBitmap->Flags & BMP_COLOR_TABLE)
+         {
+         NewBitmap->ColorTablePtr = new byte[COLOR_TABLE_RGB_SIZE];
+         if (NewBitmap->ColorTablePtr == NULL) 
+            {
+            printf("CreateGPBitmapData( ): Color table allocation error.\n");
+            goto _CreateGPBitmapData_Error;
+            }
+         }
+
+      //-- Allocate font table if needed --
+      if (NewBitmap->Flags & BMP_FONT_TABLE)
+         {
+         NewBitmap->FontTablePtr = new FontTableRec[FONT_TABLE_MAX_COUNT];
+         if (NewBitmap->FontTablePtr == NULL) 
+            {
+            printf("CreateGPBitmapData( ): Font table allocation error.\n");
+            goto _CreateGPBitmapData_Error;
+            }
+         }
+
+      //-- Normal exit --
+      return true;
+
+      //-- Exit on error --
+      _CreateGPBitmapData_Error:
+      DeleteTexture(NewBitmap);
+      return false;
+      }
+
+   /*----------------------------------------------------------------------------
+      This function de-allcoates and clears a general purpose bitmap record. 
+      It is assumed that all data records in OldBitmap is initialised correctly.
+     ----------------------------------------------------------------------------*/
+   void DeleteTexture(GPBitmapRec* OldBitmap)
+      {
+      if (OldBitmap == NULL) {return;}
+
+      if (OldBitmap->BitmapPtr     != NULL) {delete[] OldBitmap->BitmapPtr;}
+      if (OldBitmap->ColorTablePtr != NULL) {delete[] OldBitmap->ColorTablePtr;}
+      if (OldBitmap->FontTablePtr  != NULL) {delete[] OldBitmap->FontTablePtr;}
+
+      Clear(OldBitmap);
+      }
+
+   /*==== End Class =============================================================*/
+   };
+
+
+/*----------------------------------------------------------------------------
+  Global Declarations.
+  ----------------------------------------------------------------------------*/
+typedef GPBitmapClass::GPBitmapRec  GPBitmapRec;
+typedef GPBitmapClass::FontTableRec FontTableRec;
+GPBitmapClass GPBitmap;
+
+
+
+/*==== End of file ===========================================================*/
+#endif

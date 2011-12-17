@@ -1,0 +1,149 @@
+//----------------------------------------------------------------------------
+//                                   Test Scene
+//----------------------------------------------------------------------------
+
+//-- Video setup --
+VIDEO
+        //NOTE: To enable the full screen mode (or hardware rendering mode)
+        //      to work correctly, it is important to choose the correct
+        //      screen resolution, color depth and the refresh rate supported 
+        //      by the 3D card.
+        FullScreen      0                       //If set true, then the display is in full screen
+        //Res             140 105
+        //Res             320 240
+        //Res             512 384
+        Res             640 480
+        //Res             720 480                 //NTSC
+        //Res             720 486                 //NTSC
+        //Res             720 576                 //PAL
+        //Res             736 398                 //Letter box
+        //Res             768 576                 //PAL
+        //Res             800 600
+        //Res             960 720
+        //Res             1024 768
+        //Res             1152 864
+        //Res             1280 960
+        //Res             1280 960
+        //Res             1280 1024
+        //Res             1600 1200
+        //BitsPerPixel    16                      //Bits per pixel
+        //BitsPerPixel    24
+        BitsPerPixel    32
+        Refresh           60                      //Refresh rate in Hz
+        //Refresh           70
+        //Refresh           75
+        //Refresh           80
+        //Refresh           85
+
+//-- Renderer setup --
+RENDER
+        /*---- Notes on defining the profile curve equation ----
+        
+        Negation "-" has a precedence over power "^", eg.: -x^2 != -(x^2).
+        Functions such as sqrt( ), tan( ), ln( ), ...etc have a precedence 
+        over negation, eg.: -sqrt(x) == -(sqrt(x)).
+        
+        Definig powers that include other arithmetic must be declared 
+        in brackets, eg.: x^(1+x).
+        
+        Negative powers       : x^-x, 2^-1, (-x)^-2, x^-(1+2), ...etc.
+        Exponentials          : exp( ).
+        Log base 10           : log( ).
+        Log base e            : ln( ).
+        Trig. functions       : sin( ), cos( ), tan( ), asin( ), acos( ), atan( ).
+        Hyperbolic functions  : sinh( ), cosh( ), tanh( ).
+        Square root           : sqrt( ).
+        Absolute value        : abs( ).
+        
+        --------------------------------------------------------*/
+
+        ProfEquLimX 10000 ProfEqu NULL                    //Profile curve: None, default perspective
+        //ProfEquLimX 1.666 ProfEqu "-x + 1;"               //Line
+        //ProfEquLimX 1.666 ProfEqu "-2*x + 1;"             //Line
+        //ProfEquLimX 1.666 ProfEqu "-x*x + 1;"             //Parabola
+        //ProfEquLimX 1.666 ProfEqu "-2.5*x*x + 0.5;"       //Parabola
+        //ProfEquLimX 1.000 ProfEqu "sqrt(1 - x*x);"        //Sphere
+        //ProfEquLimX 1.666 ProfEqu "-sqrt(4.0 * (1 + 1.5*x^2)) + 3;" //Hyperbola
+        //ProfEquLimX 1.666 ProfEqu "-((x+0.01)^x) + 2;" 
+        //ProfEquLimX 1.666 ProfEqu "-log(x+0.1);" 
+        //ProfEquLimX 1.666 ProfEqu "-(x^3) + x*x + x + 1;"
+        //ProfEquLimX 1.666 ProfEqu "log(x+2);" 
+        //ProfEquLimX 1.666 ProfEqu "-tanh(x-1);"           //Hyperbolic Tangent
+        //ProfEquLimX 1.666 ProfEqu "0.1*x^4 - 1.25*x^2 + x*x + x + 1 + 0.2*cos(8*x);"
+        //ProfEquLimX 1.666 ProfEqu "-10e000*(x-0.5)^3 + x + 0.05*cos(40*x);" //Trippy
+        
+        //-- View, camera and display settings --
+        CamApeture      1.3333333333 1 1        //X, Y Camera apeture size, and Z = field of view
+
+        //-- Flags --
+        ClearFlag       1                       //If set true, the frame buffer is cleared with BackgndColor after refresh
+        ShadowFlag      0                       //If set true, shadows are generated (ray tracer only)
+        RefractFlag     1                       //If set true, refractions are rendered (ray tracer only)
+        ReflectFlag     1                       //If set true, reflections are rendered (ray tracer only)
+        HotspotFlag     1                       //Render in hotspot mode (ray tracer only)
+        AntiAliasFlag   1                       //Do anti-aliasing
+        PCompFlag       0                       //If set true, then projetor viewpoint compesation is enabled
+
+        //-- Other attributes --
+        POffset         -2.5                    //Projector z-offset in world coords (must be always negative < 0)
+        //BackgndColor    0.0 0.0 0.0             //Background color
+        BackgndColor    0.2 0.5 0.7             //Background color
+        AA_Treshold     0.03                    //The luminance threshold for anti-aliasing (ray tracer only)
+        AA_Samples      6                      //Number of samples for anti-aliasing (ray tracer only)
+        AA_Jitter       0.0055                  //Jitter amplitude for anti-aliasing (ray tracer only)
+        MaxRayDepth     4                       //Maximum ray-tracing recursions
+        AdaptDepthTresh 0.05                    //The threshold for adatptive depth control (ray tracer only)
+        SubdivTresh     0.1                     //Subdivision threshold (OpenGL only)
+        Max_LOD         5                       //Maximum polygon sub-div recursions - USE IT WISELY! (OpenGL only)
+        TabRes          20                      //The lookup rable resolution, default: 1/20th of a degree (OpenGL only) (integer)
+        CurrentDevice   4                       //Specifies the current redering mode:
+                                                // NULL = 0, DDRAW = 1, D3D = 2, GLIDE = 3, OPENGL = 4, RAY = 5
+
+//-- Setup world attributes --
+WORLD										   
+        VOrigin         0 2.5 -5                   //Initial view origin in the world
+        VVelocity       0 0 0                   //Initial view velocity
+        VRotation       0 0 0                   //Initial view rotation
+        VOrientation    0 0 0.00000000001       //Initial View orientation
+
+
+/*
+ENTITY
+        Class           "objects/tricycle.cob"
+        Coord           0 0.25 -4
+        Orientation     90 90 180
+        ScaleConst      1.0 1.0 1.0
+        Velocity        0 0 0
+        Rotation        0 0 0
+/**/
+/*
+//-- Floor --
+ENTITY
+        Class           "objects/checker_board.cob"
+        Coord           0 0 0
+        Orientation     90 45 180
+        ScaleConst      10.0 10.0 1.0
+        Velocity        0 0 0
+        Rotation        0 0 0
+/**/
+//-- Floor --
+/*ENTITY
+        Class           PLANE
+        GridRes         3 3
+        Color           0.9  0.9  0.9
+        Coord           0 0 0
+        Orientation     0 45.5 0 
+        ScaleConst      10.0 1.0 10.0
+        Velocity        0 0 0
+        Rotation        0 0 0
+/**/
+
+
+
+
+
+//-- Light setup --
+LIGHT   AmbColor 0.1 0.2 0.4                    //Setup ambient light color. Coord and Color keywords are ignored.
+
+LIGHT   Coord   0  30 -30
+        Color 1.0 1.0 1.0

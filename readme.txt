@@ -39,6 +39,8 @@ but it did the job. The project is organised into the following structure:
    cosmic_ray_tau.dsw   - Visual Studio 6.0 project file
    cosmic_ray_tau.mak   - Visual Studio 6.0 makefile
    glut32.dll           - GLUT runtime library
+   license.txt          - GPL 2.0 license
+   readme.txt           - This file
 
 
 3.0 Additional Information

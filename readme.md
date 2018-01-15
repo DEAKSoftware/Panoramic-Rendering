@@ -37,9 +37,9 @@ readme.md          | This file
 thesis.pdf         | The full thesis
 
 
-## 3 Additional Information
+## 3 Supporting Resources
 
-### 3.1 Supporting Documentation
+### 3.1 Documentation
 
 * [Panoramic Rendering](https://deaksoftware.com.au/articles/panoramic_rendering) - Main article
 * [Panoramic Rendering for Concave Surfaces of Revolution](./thesis.pdf) - PDF thesis, 3.2 MB

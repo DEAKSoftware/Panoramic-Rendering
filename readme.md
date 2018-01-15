@@ -3,16 +3,16 @@
 Dominik Deák
 
 
-## 1.0 Introduction
+## 1 Introduction
 
-This project is the source code for my thesis, "Panoramic Rendering for Concave Surfaces of Revolution", submitted in 2001. The thesis investigated methods for generating panoramic images, based on a 2D profile curve, or a mathematical expression.
+This project is the source code for my thesis, *Panoramic Rendering for Concave Surfaces of Revolution*, submitted in 2001. The thesis investigated methods for generating panoramic images, based on a 2D profile curve, or a mathematical expression.
 
 A surface of revolution can be constructed by revolving a 2D curve around a line, the principal axis. The geometric shape of the symmetrical surface is governed by the 2D function, the profile curve. Since most curved displays can be considered to be symmetrical about its principal axis, 2D profile curves provide a convenient way for modelling a display shape.
 
 The software implementation includes a ray-tracer and a real-time rendering system.
 
 
-## 2.0 Source Code
+## 2 Source Code
 
 The code is not exactly a shining example of good C++ programming practices, but it did the job. The project is organised into the following structure:
 
@@ -37,28 +37,25 @@ readme.md          | This file
 thesis.pdf         | The full thesis
 
 
-## 3.0 Additional Information
+## 3 Additional Information
 
 ### 3.1 Thesis
 
-[Panoramic Rendering for Concave Surfaces of Revolution](./thesis.pdf)
+[Panoramic Rendering for Concave Surfaces of Revolution](./thesis.pdf) - PDF document, 3.2 MB
 
 ### 3.2 Project Overview
 
-<https://deaksoftware.com.au/articles/panoramic_rendering>
+* [Panoramic Rendering](https://deaksoftware.com.au/articles/panoramic_rendering) - Main article
 
-### 3.3 Video Demonstration of the Algorithm
+### 3.3 Video Clips
 
-<https://www.youtube.com/watch?v=MCSk8av_H7Q>
-
-<https://www.youtube.com/watch?v=RVNAbg3a7mA>
-
-<https://www.youtube.com/watch?v=fmpXRi-tAOo>
-
-<https://www.youtube.com/watch?v=hjgnWKOimcQ>
+* [Fourth Degree Polynomial Panorama With Cosine Perturbation](https://www.youtube.com/watch?v=MCSk8av_H7Q) - YouTube video
+* [Hyperbolic Panorama](https://www.youtube.com/watch?v=RVNAbg3a7mA) - YouTube video
+* [Logarithmic Curve Panorama](https://www.youtube.com/watch?v=fmpXRi-tAOo) - YouTube video
+* [Spherical Panorama](https://www.youtube.com/watch?v=hjgnWKOimcQ) - YouTube video
 
 
-## 4.0 License
+## 4 Legal and Copyright
 
 Released under the [MIT License](./license.md).
 

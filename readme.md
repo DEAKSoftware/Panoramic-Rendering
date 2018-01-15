@@ -39,15 +39,12 @@ thesis.pdf         | The full thesis
 
 ## 3 Additional Information
 
-### 3.1 Thesis
-
-[Panoramic Rendering for Concave Surfaces of Revolution](./thesis.pdf) - PDF document, 3.2 MB
-
-### 3.2 Project Overview
+### 3.1 Supporting Documentation
 
 * [Panoramic Rendering](https://deaksoftware.com.au/articles/panoramic_rendering) - Main article
+* [Panoramic Rendering for Concave Surfaces of Revolution](./thesis.pdf) - PDF thesis, 3.2 MB
 
-### 3.3 Video Clips
+### 3.2 Video Clips
 
 * [Fourth Degree Polynomial Panorama With Cosine Perturbation](https://www.youtube.com/watch?v=MCSk8av_H7Q) - YouTube video
 * [Hyperbolic Panorama](https://www.youtube.com/watch?v=RVNAbg3a7mA) - YouTube video
